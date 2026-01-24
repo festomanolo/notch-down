@@ -52,18 +52,18 @@ tell application "Finder"
         set current view of container window to icon view
         set toolbar visible of container window to false
         set statusbar visible of container window to false
-        -- Retina 2x scale adjustment
-        set the bounds of container window to {100, 100, 700, 500}
+        -- Premium Retina scale adjustment
+        set the bounds of container window to {100, 100, 740, 540} -- 640x440
         
         set theViewOptions to the icon view options of container window
         set arrangement of theViewOptions to not arranged
-        set icon size of theViewOptions to 96
+        set icon size of theViewOptions to 110
         set background picture of theViewOptions to file ".background:background.png"
         
-        -- Center the icons on the "Smooth Drift" path
-        set position of item "${APP_NAME}.app" to {160, 220}
-        set position of item "Applications" to {440, 220}
-        set position of item "License.txt" to {300, 360}
+        -- Center the icons on the "Smooth Drift" path (Godmode coordinates)
+        set position of item "${APP_NAME}.app" to {180, 220}
+        set position of item "Applications" to {460, 220}
+        set position of item "License.txt" to {320, 360}
         
         update without registering applications
         delay 2

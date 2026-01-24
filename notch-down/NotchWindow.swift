@@ -63,24 +63,24 @@ class NotchWindowController: NSWindowController {
     }
     
     func showWithMorphAnimation() {
-        guard let window = window, let screen = NSScreen.main else { return }
-        guard !morphAnimationInProgress else { return }
-        
-        morphAnimationInProgress = true
+        let mouseLocation = NSEvent.mouseLocation
+        let screen = NSScreen.screens.first { NSMouseInRect(mouseLocation, $0.frame, false) } ?? NSScreen.main ?? NSScreen.screens.first!
         
         let screenWidth = screen.frame.width
         let screenHeight = screen.frame.height
+        let screenOriginX = screen.frame.origin.x
+        let screenOriginY = screen.frame.origin.y
         let safeAreaTop = screen.safeAreaInsets.top
         let topPadding = safeAreaTop > 0 ? safeAreaTop : 32
         
         let contentSize = MorphingGeometry.calculateFrame(for: .expanded)
         let windowSize = CGSize(width: contentSize.width + (windowPadding * 2), height: contentSize.height + (windowPadding * 2))
         
-        let finalY = screenHeight - topPadding - contentSize.height - 8 - windowPadding
-        let finalX = (screenWidth - windowSize.width) / 2
+        let finalY = screenOriginY + screenHeight - topPadding - contentSize.height - 8 - windowPadding
+        let finalX = screenOriginX + (screenWidth - windowSize.width) / 2
         let finalFrame = NSRect(x: finalX, y: finalY, width: windowSize.width, height: windowSize.height)
         
-        let startY = screenHeight - topPadding + 10 - windowPadding
+        let startY = screenOriginY + screenHeight - topPadding + 10 - windowPadding
         let startFrame = NSRect(x: finalX, y: startY, width: windowSize.width, height: windowSize.height)
         
         window.setFrame(startFrame, display: false)
@@ -100,18 +100,23 @@ class NotchWindowController: NSWindowController {
     }
     
     func updateWindowFrame(for state: IslandState, animated: Bool = true) {
-        guard let window = window, let screen = NSScreen.main else { return }
+        guard let window = window else { return }
+        
+        let mouseLocation = NSEvent.mouseLocation
+        let screen = NSScreen.screens.first { NSMouseInRect(mouseLocation, $0.frame, false) } ?? NSScreen.main ?? NSScreen.screens.first!
         
         let screenWidth = screen.frame.width
         let screenHeight = screen.frame.height
+        let screenOriginX = screen.frame.origin.x
+        let screenOriginY = screen.frame.origin.y
         let safeAreaTop = screen.safeAreaInsets.top
         let topPadding = safeAreaTop > 0 ? safeAreaTop : 32
         
         let contentSize = MorphingGeometry.calculateFrame(for: state)
         let windowSize = CGSize(width: contentSize.width + (windowPadding * 2), height: contentSize.height + (windowPadding * 2))
         
-        let newX = (screenWidth - windowSize.width) / 2
-        let newY = screenHeight - topPadding - contentSize.height - 8 - windowPadding
+        let newX = screenOriginX + (screenWidth - windowSize.width) / 2
+        let newY = screenOriginY + screenHeight - topPadding - contentSize.height - 8 - windowPadding
         let newFrame = NSRect(x: newX, y: newY, width: windowSize.width, height: windowSize.height)
         
         if animated {

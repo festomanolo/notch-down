@@ -215,7 +215,7 @@ class NotchPanel: NSPanel {
         let hostingController = NSHostingController(rootView: rootView.padding(80)) // Add padding in SwiftUI too
         
         super.init(
-            contentRect: NSRect(x: 0, y: 0, width: 640, height: 280), // Larger base size
+            contentRect: NSRect(x: 0, y: 0, width: 1000, height: 440), // Extreme base size for space
             styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
             defer: false

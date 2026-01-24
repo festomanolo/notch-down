@@ -46,11 +46,7 @@ class PowerManager {
     }
     
     func execute(_ action: PowerAction) {
-        if isSystemBusy() {
-            print("System is busy (Movie/Render active). Aborting power action.")
-            return
-        }
-
+        // Godmode: Always execute if triggered by user/timer, bypass busy check for now to ensure reliability
         let scriptSource: String
         switch action {
         case .shutdown:

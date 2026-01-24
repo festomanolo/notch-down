@@ -1,0 +1,29 @@
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Xcode
+build/
+DerivedData/
+*.xcworkspace
+!default.xcworkspace
+xcuserdata/
+*.xccheckout
+*.xcscheme
+!default.xcscheme
+*.xcscmblueprint
+*.xctest
+*.cache
+
+# Swift Package Manager
+.build/
+.swiftpm
+
+# Distribution
+*.dmg
+*.pkg
+
+# Misc
+*.sh
+!create_dmg.sh

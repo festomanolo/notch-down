@@ -1,0 +1,23 @@
+NotchDown - End User License Agreement (EULA)
+
+This End User License Agreement ("Agreement") is a legal agreement between you and the developers of NotchDown.
+
+1. LICENSE GRANT
+NotchDown grants you a non-exclusive, non-transferable license to use the Software on macOS devices that you own or control.
+
+2. RESTRICTIONS
+You shall not:
+a) Decompile, reverse engineer, or disassemble the software.
+b) Modify, rent, lease, or distribute the software without prior authorization.
+c) Use the software in any manner that violates applicable laws.
+
+3. "GODMODE" EXPERIENCE
+By using NotchDown, you acknowledge that you are entering a high-fidelity productivity state. NotchDown is designed to enhance your macOS experience through intelligent power management and fluid aesthetics.
+
+4. NO WARRANTY
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED. IN NO EVENT SHALL THE AUTHORS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY.
+
+5. TERMINATION
+This license is effective until terminated. Your rights under this license will terminate automatically without notice if you fail to comply with any term(s) of this Agreement.
+
+Copyright (c) 2026 NotchDown Team. All rights reserved.

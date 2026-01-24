@@ -120,7 +120,7 @@ enum AppTheme: CaseIterable {
         case .dark:
             return Color.black.opacity(0.85)  // Glassmorphism effect
         case .light:
-            return Color.white.opacity(0.85)
+            return Color.white.opacity(0.92) // Higher contrast glass for Godmode
         }
     }
     
@@ -130,7 +130,7 @@ enum AppTheme: CaseIterable {
         case .dark:
             return Color.white.opacity(0.08)
         case .light:
-            return Color.black.opacity(0.05)
+            return Color.black.opacity(0.08) // More visible secondary background
         }
     }
     

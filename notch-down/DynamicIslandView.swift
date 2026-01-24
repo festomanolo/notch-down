@@ -769,16 +769,20 @@ struct AboutView: View {
             // Header with Back Button
             HStack {
                 Button {
-                    withAnimation(.spring(response: 0.5, dampingFraction: 0.8)) {
+                    withAnimation(.spring(response: 0.4, dampingFraction: 0.82)) {
                         viewModel.islandState = .expanded
                     }
                 } label: {
-                    HStack(spacing: 4) {
+                    HStack(spacing: 6) {
                         Image(systemName: "chevron.left")
+                            .font(.system(size: 14, weight: .bold))
                         Text("Back")
+                            .font(.system(size: 13, weight: .bold, design: .rounded))
                     }
-                    .font(.system(size: 13, weight: .semibold, design: .rounded))
                     .foregroundColor(viewModel.currentTheme.accentBlue)
+                    .contentShape(Rectangle()) // Explicit hit testing area
+                    .padding(.vertical, 8)
+                    .padding(.trailing, 16)
                 }
                 .buttonStyle(PlainButtonStyle())
                 

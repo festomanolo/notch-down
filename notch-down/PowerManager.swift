@@ -58,9 +58,9 @@ class PowerManager {
         case .restart:
             scriptSource = "tell application \"System Events\" to restart"
         case .logout:
-            scriptSource = "tell application \"System Events\" to log out"
+            scriptSource = "tell application \"loginwindow\" to «event aevtrlgo»" // Direct logout event
         case .sleep:
-            scriptSource = "tell application \"System Events\" to sleep"
+            scriptSource = "tell application \"Finder\" to sleep"
         }
         
         // Execute AppleScript

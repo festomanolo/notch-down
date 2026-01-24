@@ -76,8 +76,8 @@ class NotchWindowController: NSWindowController {
         let contentSize = MorphingGeometry.calculateFrame(for: .expanded)
         let windowSize = CGSize(width: contentSize.width + (windowPadding * 2), height: contentSize.height + (windowPadding * 2))
         
+        let finalX = screenOriginX + (screenWidth / 2) - (windowSize.width / 2)
         let finalY = screenOriginY + screenHeight - topPadding - contentSize.height - 8 - windowPadding
-        let finalX = screenOriginX + (screenWidth - windowSize.width) / 2
         let finalFrame = NSRect(x: finalX, y: finalY, width: windowSize.width, height: windowSize.height)
         
         let startY = screenOriginY + screenHeight - topPadding + 10 - windowPadding
@@ -115,7 +115,7 @@ class NotchWindowController: NSWindowController {
         let contentSize = MorphingGeometry.calculateFrame(for: state)
         let windowSize = CGSize(width: contentSize.width + (windowPadding * 2), height: contentSize.height + (windowPadding * 2))
         
-        let newX = screenOriginX + (screenWidth - windowSize.width) / 2
+        let newX = screenOriginX + (screenWidth / 2) - (windowSize.width / 2)
         let newY = screenOriginY + screenHeight - topPadding - contentSize.height - 8 - windowPadding
         let newFrame = NSRect(x: newX, y: newY, width: windowSize.width, height: windowSize.height)
         

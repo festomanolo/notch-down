@@ -16,7 +16,7 @@ struct MorphingGeometry {
     
     /// Base geometry definitions for Dynamic Island states
     private struct BaseGeometry {
-        static let collapsedSize = CGSize(width: 450, height: 40) // Massively widened to eliminate ANY truncation
+        static let collapsedSize = CGSize(width: 600, height: 40) // Extreme width to kill truncation forever
         static let expandedSize = CGSize(width: 480, height: 120) // Much wider, shorter
         static let criticalSize = CGSize(width: 500, height: 130) // Slightly larger for critical state
         static let aboutSize = CGSize(width: 360, height: 220) // Taller for profile and about info

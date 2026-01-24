@@ -76,7 +76,7 @@ struct DynamicIslandView: View {
         }
         .padding(.horizontal, 24)
         .padding(.vertical, 8)
-        .frame(width: 450, height: 40) // Fixed size for absolute stability
+        .frame(width: 600, height: 40) // Global widen fix
         .contentShape(Rectangle()) // Make entire area gesture-sensitive
         .gesture(
             DragGesture(minimumDistance: 30)

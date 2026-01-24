@@ -1,10 +1,10 @@
-# NotchDown: The Dynamic Island for macOS 🏝️
+# NotchDown: The Dynamic Island for macOS
 
 **NotchDown** is a premium, high-fidelity macOS power management utility that breathes life into your MacBook's notch. It transforms the screen's static area into an intelligent, interactive "Dynamic Island" that helps you manage system intent—Shutdown, Sleep, and Restart—with fluid animations and proactive intelligence.
 
 ---
 
-## ✨ Features
+## Features
 
 - **Liquid UI Performance**: Physics-based morphing animations using custom spring solver for a tactile, "living" interface feel.
 - **Micro-Action Gestures**: 
@@ -18,7 +18,7 @@
 
 ---
 
-## 🚀 Technical Innovation
+## Technical Innovation
 
 NotchDown isn't just a timer; it's an engineering exploration of how to bridge the gap between utility and delight on macOS.
 
@@ -38,7 +38,7 @@ NotchDown isn't just a timer; it's an engineering exploration of how to bridge t
 
 ---
 
-## 🎨 Aesthetics: "Godmode" UI
+## Aesthetics: Nolo UI
 
 Every interaction in NotchDown is designed to feel premium. We use:
 - **Custom Spring Physics**: To ensure every expansion and collapse feels organic.
@@ -46,9 +46,3 @@ Every interaction in NotchDown is designed to feel premium. We use:
 - **Haptic-Visual Feedback**: Symbolic bounces and glows that respond to your intent.
 
 ---
-
-## 📄 License & Attribution
-
-Designed and engineered for the ultimate macOS "Godmode" experience. 
-
-*NotchDown is ready for the App Store. Let's make power management beautiful.*

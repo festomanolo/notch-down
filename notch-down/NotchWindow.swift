@@ -162,6 +162,22 @@ class NotchWindowController: NSWindowController {
         }
     }
     
+    func updateScreen(_ screen: NSScreen) {
+        let contentSize = MorphingGeometry.calculateFrame(for: currentIslandState)
+        let windowSize = CGSize(width: contentSize.width + (windowPadding * 2), height: contentSize.height + (windowPadding * 2))
+        
+        let screenWidth = screen.frame.width
+        let screenHeight = screen.frame.height
+        let safeAreaTop = screen.safeAreaInsets.top
+        let topPadding = safeAreaTop > 0 ? safeAreaTop : 32
+        
+        let newX = screen.frame.origin.x + (screenWidth - windowSize.width) / 2
+        let newY = screen.frame.origin.y + screenHeight - topPadding - contentSize.height - 8 - windowPadding
+        let newFrame = NSRect(x: newX, y: newY, width: windowSize.width, height: windowSize.height)
+        
+        window?.setFrame(newFrame, display: true)
+    }
+    
     func hide() {
         guard let window = window, let screen = NSScreen.main else { return }
         guard !morphAnimationInProgress else { return }

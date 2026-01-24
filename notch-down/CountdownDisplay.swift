@@ -261,12 +261,18 @@ struct CompactCountdownDisplay: View {
                 .foregroundColor(urgencyColor)
                 .symbolEffect(.bounce, value: viewModel.timeRemaining)
             
-            // Time remaining
-            Text(viewModel.timeString)
-                .font(.system(size: fontSize, weight: .semibold, design: .monospaced))
-                .foregroundColor(urgencyColor)
-                .contentTransition(.numericText(countsDown: true))
-                .animation(SpringAnimator.slotMachineRoll(), value: viewModel.timeRemaining)
+            // Action Label + Time remaining
+            HStack(spacing: 4) {
+                Text(actionDisplayName)
+                    .font(.system(size: fontSize * 0.9, weight: .bold, design: .rounded))
+                    .foregroundColor(urgencyColor.opacity(0.8))
+                
+                Text(viewModel.timeString)
+                    .font(.system(size: fontSize, weight: .semibold, design: .monospaced))
+                    .foregroundColor(urgencyColor)
+                    .contentTransition(.numericText(countsDown: true))
+                    .animation(SpringAnimator.slotMachineRoll(), value: viewModel.timeRemaining)
+            }
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 4)
@@ -283,6 +289,15 @@ struct CompactCountdownDisplay: View {
     
     private var actionIconName: String {
         viewModel.currentPowerAction.iconName
+    }
+    
+    private var actionDisplayName: String {
+        switch viewModel.currentPowerAction {
+        case .shutdown: return "Shutdown"
+        case .restart: return "Restart"
+        case .sleep: return "Sleep"
+        case .logout: return "Log Out"
+        }
     }
     
     private var iconName: String {
@@ -314,7 +329,7 @@ struct CompactCountdownDisplay: View {
             return 12
         case .expanding:
             return 14
-        case .expanded, .critical:
+        case .expanded, .critical, .about:
             return 16
         }
     }

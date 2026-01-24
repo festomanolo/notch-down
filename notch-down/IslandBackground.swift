@@ -84,7 +84,7 @@ struct IslandBackground: View {
         switch state {
         case .collapsed, .collapsing:
             return IslandGeometry.cornerRadius.collapsed
-        case .expanded, .critical:
+        case .expanded, .critical, .about:
             return IslandGeometry.cornerRadius.expanded
         case .expanding:
             return IslandGeometry.interpolateCornerRadius(progress: morphProgress)
@@ -194,7 +194,7 @@ struct IslandBackground: View {
                 morphProgress = 0.0
             case .expanding:
                 morphProgress = 0.5
-            case .expanded, .critical:
+            case .expanded, .critical, .about:
                 morphProgress = 1.0
             }
         }

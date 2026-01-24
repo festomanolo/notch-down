@@ -8,6 +8,8 @@
 import SwiftUI
 import Combine
 import AppKit
+import ServiceManagement
+import ScreenSaver
 
 @main
 struct NotchDownApp: App {
@@ -36,8 +38,14 @@ struct NotchDownApp: App {
 
 struct MenuBarContent: View {
     @ObservedObject var viewModel: TimerViewModel
-    
     var body: some View {
+        Button("About NotchDown") {
+            viewModel.expandIsland()
+            viewModel.showAboutPage()
+        }
+        
+        Divider()
+        
         // Quick timer actions
         Button("Shutdown in 5 min") { 
             viewModel.startTimer(minutes: 5, action: .shutdown) 
@@ -82,7 +90,7 @@ struct MenuBarContent: View {
         
         Divider()
         
-        Button("Quit") {
+        Button("Quit NotchDown") {
             NSApplication.shared.terminate(nil)
         }
     }
@@ -225,6 +233,22 @@ class TimerViewModel: ObservableObject {
     @Published var suggestionMessage = ""
     @Published var currentPowerAction: PowerAction = .shutdown
     
+    // About Page State
+    @Published var isCheckingForUpdates = false
+    @Published var updateStatusMessage = ""
+    
+    // Background & System Integration
+    @Published var startAtLogin = false {
+        didSet {
+            toggleLoginItem(startAtLogin)
+        }
+    }
+    @Published var showInDock = false {
+        didSet {
+            toggleDockIcon(showInDock)
+        }
+    }
+    
     // MARK: - Initialization
     
     init() {
@@ -365,6 +389,61 @@ class TimerViewModel: ObservableObject {
         heartbeatSound?.stop()
         
         hideWindow()
+    }
+    
+    func showAboutPage() {
+        withAnimation(.spring(response: 0.5, dampingFraction: 0.8)) {
+            islandState = .about
+        }
+    }
+    
+    func handleCheckForUpdates() {
+        isCheckingForUpdates = true
+        updateStatusMessage = "Checking for updates..."
+        
+        // Simulate a Godmode update check
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self] in
+            self?.isCheckingForUpdates = false
+            self?.updateStatusMessage = "You are on the latest Godmode version (1.0.0)"
+        }
+    }
+    
+    // MARK: - Background & System Management
+    
+    private func toggleLoginItem(_ enable: Bool) {
+        let service = SMAppService.mainApp
+        do {
+            if enable {
+                if service.status != .enabled {
+                    try service.register()
+                }
+            } else {
+                if service.status == .enabled {
+                    try service.unregister()
+                }
+            }
+        } catch {
+            print("Failed to toggle login item: \(error)")
+        }
+    }
+    
+    private func toggleDockIcon(_ show: Bool) {
+        if show {
+            NSApp.setActivationPolicy(.regular)
+        } else {
+            NSApp.setActivationPolicy(.accessory)
+        }
+    }
+    
+    private func updateActiveScreen() {
+        // Find screen with cursor or focused window
+        let mouseLocation = NSEvent.mouseLocation
+        let screens = NSScreen.screens
+        let activeScreen = screens.first { NSMouseInRect(mouseLocation, $0.frame, false) } ?? screens.first
+        
+        if let activeScreen = activeScreen {
+            windowController?.updateScreen(activeScreen)
+        }
     }
     
     private func tick() {
@@ -525,6 +604,9 @@ class TimerViewModel: ObservableObject {
     /// Expands the Dynamic Island to show full interface using spring physics
     func expandIsland() {
         guard islandState == .collapsed else { return }
+        
+        // Update screen before expanding to ensure it appears on the active display
+        updateActiveScreen()
         
         animationPhase = .morphing
         islandState = .expanding

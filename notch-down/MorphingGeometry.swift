@@ -19,10 +19,12 @@ struct MorphingGeometry {
         static let collapsedSize = CGSize(width: 140, height: 32)
         static let expandedSize = CGSize(width: 480, height: 120) // Much wider, shorter
         static let criticalSize = CGSize(width: 500, height: 130) // Slightly larger for critical state
+        static let aboutSize = CGSize(width: 360, height: 220) // Taller for profile and about info
         
         static let collapsedRadius: Double = 16.0
         static let expandedRadius: Double = 20.0
         static let criticalRadius: Double = 22.0
+        static let aboutRadius: Double = 24.0
     }
     
     // MARK: - Frame Size Calculations
@@ -57,6 +59,9 @@ struct MorphingGeometry {
             
         case .critical:
             return BaseGeometry.criticalSize
+            
+        case .about:
+            return BaseGeometry.aboutSize
         }
     }
     
@@ -100,6 +105,8 @@ struct MorphingGeometry {
             return interpolateCornerRadius(progress: 0.5)
         case .critical:
             return BaseGeometry.criticalRadius
+        case .about:
+            return BaseGeometry.aboutRadius
         }
     }
     

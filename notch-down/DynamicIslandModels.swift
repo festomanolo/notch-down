@@ -16,6 +16,7 @@ enum IslandState: CaseIterable {
     case expanded       // Full interface visible
     case collapsing     // Returning to pill shape
     case critical       // Auto-expanded for urgency (< 1 minute or < 10 seconds)
+    case about          // Dedicated About page for festomanolo profile
 }
 
 /// Represents the current animation phase for visual effects
@@ -198,7 +199,7 @@ struct IslandGeometry {
         switch state {
         case .collapsed, .collapsing:
             return collapsedSize
-        case .expanded, .critical:
+        case .expanded, .critical, .about:
             return expandedSize
         case .expanding:
             // Return intermediate size during morphing

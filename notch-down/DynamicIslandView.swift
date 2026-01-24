@@ -53,6 +53,9 @@ struct DynamicIslandView: View {
             
         case .expanded, .critical:
             expandedContent
+            
+        case .about:
+            AboutView(viewModel: viewModel)
         }
     }
     
@@ -136,9 +139,16 @@ struct DynamicIslandView: View {
                 // Theme toggle
                 ThemeToggle(viewModel: viewModel)
                 
-                // Minimize button
-                MinimizeButton {
-                    viewModel.collapseIsland()
+                HStack(spacing: 8) {
+                    // About button (Exclamation mark)
+                    AboutCircleButton {
+                        viewModel.showAboutPage()
+                    }
+                    
+                    // Minimize button
+                    MinimizeButton {
+                        viewModel.collapseIsland()
+                    }
                 }
             }
             
@@ -203,7 +213,7 @@ struct DynamicIslandView: View {
             return 1.0
         case .expanding:
             return 0.7
-        case .expanded, .critical:
+        case .expanded, .critical, .about:
             return 1.0
         case .collapsing:
             return 0.5
@@ -286,6 +296,8 @@ struct ModernIslandBackground: View {
             return 18
         case .expanded, .critical:
             return 20
+        case .about:
+            return 24
         }
     }
     
@@ -743,5 +755,242 @@ struct CustomTimeInputView: View {
                 .buttonStyle(PlainButtonStyle())
             }
         }
+    }
+}
+
+// MARK: - About View Component
+
+struct AboutView: View {
+    @ObservedObject var viewModel: TimerViewModel
+    @State private var haloRotation: Double = 0
+    
+    var body: some View {
+        VStack(spacing: 16) {
+            // Header with Back Button
+            HStack {
+                Button {
+                    withAnimation(.spring(response: 0.5, dampingFraction: 0.8)) {
+                        viewModel.islandState = .expanded
+                    }
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "chevron.left")
+                        Text("Back")
+                    }
+                    .font(.system(size: 13, weight: .semibold, design: .rounded))
+                    .foregroundColor(viewModel.currentTheme.accentBlue)
+                }
+                .buttonStyle(PlainButtonStyle())
+                
+                Spacer()
+                
+                Text("About")
+                    .font(.system(size: 14, weight: .bold, design: .rounded))
+                    .foregroundColor(viewModel.currentTheme.textColor)
+                
+                Spacer()
+                
+                // Spacer to balance the back button
+                Text("Back").opacity(0)
+            }
+            
+            HStack(spacing: 20) {
+                // Profile Photo with Godmode Halo
+                ZStack {
+                    // Glowing Halo
+                    Circle()
+                        .stroke(
+                            AngularGradient(
+                                colors: [.blue, .purple, .cyan, .blue],
+                                center: .center
+                            ),
+                            lineWidth: 3
+                        )
+                        .frame(width: 86, height: 86)
+                        .rotationEffect(.degrees(haloRotation))
+                        .blur(radius: 2)
+                        .onAppear {
+                            withAnimation(.linear(duration: 4).repeatForever(autoreverses: false)) {
+                                haloRotation = 360
+                            }
+                        }
+                    
+                    // Profile Image
+                    Image(nsImage: NSImage(contentsOfFile: "/Users/festomanolo/Desktop/projects/notch-down/notch-down/Assets.xcassets/festomanolo.jpeg") ?? NSImage())
+                        .resizable()
+                        .aspectRatio(contentMode: .fill)
+                        .frame(width: 80, height: 80)
+                        .clipShape(Circle())
+                        .overlay(Circle().stroke(Color.white.opacity(0.2), lineWidth: 1))
+                        .shadow(color: .blue.opacity(0.3), radius: 10)
+                }
+                
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("festomanolo")
+                        .font(.system(size: 18, weight: .bold, design: .rounded))
+                        .foregroundColor(viewModel.currentTheme.textColor)
+                    
+                    Text("Lead Designer & Engineer")
+                        .font(.system(size: 12, weight: .medium, design: .rounded))
+                        .foregroundColor(viewModel.currentTheme.secondaryTextColor)
+                    
+                    Text("NotchDown v1.0.0")
+                        .font(.system(size: 11, weight: .bold, design: .monospaced))
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(viewModel.currentTheme.accentBlue.opacity(0.15))
+                        .foregroundColor(viewModel.currentTheme.accentBlue)
+                        .cornerRadius(8)
+                }
+            }
+            
+            VStack(spacing: 8) {
+                // System Settings Toggles
+                VStack(spacing: 8) {
+                    Toggle("Start at Login", isOn: $viewModel.startAtLogin)
+                        .toggleStyle(LiquidGlassToggleStyle())
+                    
+                    Toggle("Show Dock Icon", isOn: $viewModel.showInDock)
+                        .toggleStyle(LiquidGlassToggleStyle())
+                }
+                .padding(.horizontal, 4)
+                .padding(.vertical, 4)
+                
+                if !viewModel.updateStatusMessage.isEmpty {
+                    Text(viewModel.updateStatusMessage)
+                        .font(.system(size: 11, weight: .medium, design: .rounded))
+                        .foregroundColor(viewModel.currentTheme.secondaryTextColor)
+                        .transition(.opacity)
+                }
+                
+                Button {
+                    viewModel.handleCheckForUpdates()
+                } label: {
+                    HStack(spacing: 8) {
+                        if viewModel.isCheckingForUpdates {
+                            ProgressView()
+                                .controlSize(.small)
+                        } else {
+                            Image(systemName: "arrow.clockwise.circle")
+                        }
+                        Text(viewModel.isCheckingForUpdates ? "Checking..." : "Check for Updates")
+                    }
+                    .font(.system(size: 13, weight: .bold, design: .rounded))
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 8)
+                    .background(
+                        Capsule()
+                            .fill(LinearGradient(colors: [.blue, .blue.opacity(0.7)], startPoint: .top, endPoint: .bottom))
+                            .shadow(color: .blue.opacity(0.3), radius: 5, x: 0, y: 3)
+                    )
+                }
+                .buttonStyle(PlainButtonStyle())
+                .disabled(viewModel.isCheckingForUpdates)
+            }
+        }
+        .padding(.horizontal, 24)
+        .padding(.vertical, 16)
+    }
+}
+
+// MARK: - About Circle Button
+
+struct AboutCircleButton: View {
+    let action: () -> Void
+    @State private var isHovered = false
+    
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: "exclamationmark")
+                .font(.system(size: 12, weight: .black))
+                .foregroundColor(.white)
+                .frame(width: 24, height: 24)
+                .background(
+                    Circle()
+                        .fill(Color.blue.opacity(isHovered ? 0.3 : 0.2))
+                        .overlay(
+                            Circle()
+                                .stroke(Color.blue.opacity(0.4), lineWidth: 1)
+                        )
+                )
+        }
+        .buttonStyle(PlainButtonStyle())
+        .onHover { hovering in
+            withAnimation(.easeInOut(duration: 0.2)) {
+                isHovered = hovering
+            }
+        }
+        .scaleEffect(isHovered ? 1.1 : 1.0)
+        .animation(.spring(response: 0.3, dampingFraction: 0.7), value: isHovered)
+    }
+}
+
+// MARK: - iOS 26 Liquid Glass Toggle Style
+
+struct LiquidGlassToggleStyle: ToggleStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        HStack {
+            configuration.label
+                .font(.system(size: 11, weight: .semibold, design: .rounded))
+                .foregroundColor(.white.opacity(0.7))
+            
+            Spacer()
+            
+            ZStack {
+                // Outer Track
+                Capsule()
+                    .fill(.ultraThinMaterial)
+                    .frame(width: 44, height: 24)
+                    .overlay(
+                        Capsule()
+                            .stroke(Color.white.opacity(0.2), lineWidth: 1)
+                    )
+                
+                // Active Glow
+                if configuration.isOn {
+                    Capsule()
+                        .fill(Color.blue.opacity(0.4))
+                        .frame(width: 44, height: 24)
+                        .blur(radius: 6)
+                        .transition(.opacity.combined(with: .scale(scale: 0.8)))
+                }
+                
+                // The Liquid Knob
+                Circle()
+                    .fill(.white)
+                    .frame(width: 18, height: 18)
+                    .shadow(color: configuration.isOn ? .blue.opacity(0.6) : .black.opacity(0.3), 
+                            radius: configuration.isOn ? 8 : 3)
+                    .offset(x: configuration.isOn ? 10 : -10)
+                    .animation(.spring(response: 0.45, dampingFraction: 0.65, blendDuration: 0), 
+                               value: configuration.isOn)
+            }
+            .onTapGesture {
+                withAnimation {
+                    configuration.isOn.toggle()
+                }
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(
+            RoundedRectangle(cornerRadius: 14)
+                .fill(Color.white.opacity(0.04))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 14)
+                        .stroke(Color.white.opacity(0.05), lineWidth: 0.5)
+                )
+        )
+    }
+}
+
+struct LiquidToggle: View {
+    @Binding var isOn: Bool
+    let label: String
+    
+    var body: some View {
+        Toggle(label, isOn: $isOn)
+            .toggleStyle(LiquidGlassToggleStyle())
     }
 }

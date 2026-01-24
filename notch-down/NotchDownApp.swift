@@ -56,6 +56,12 @@ struct MenuBarContent: View {
         Button("Restart in 5 min") { 
             viewModel.startTimer(minutes: 5, action: .restart) 
         }
+        Button("Sleep in 5 min") { 
+            viewModel.startTimer(minutes: 5, action: .sleep) 
+        }
+        Button("Log Out in 5 min") { 
+            viewModel.startTimer(minutes: 5, action: .logout) 
+        }
         
         Divider()
         
@@ -114,10 +120,16 @@ struct MenuBarIcon: View {
     
     var body: some View {
         HStack(spacing: 4) {
-            // Main icon with state indicator
             Image(systemName: iconName)
                 .foregroundColor(iconColor)
                 .font(.system(size: 16, weight: .medium))
+            
+            // Optional countdown in menu bar
+            if viewModel.isActive && viewModel.showCountdownInMenuBar {
+                Text(viewModel.timeString)
+                    .font(.system(size: 13, weight: .bold, design: .monospaced))
+                    .foregroundColor(iconColor)
+            }
             
             // Urgency indicator dot (when timer is active)
             if viewModel.isActive {
@@ -248,6 +260,7 @@ class TimerViewModel: ObservableObject {
             toggleDockIcon(showInDock)
         }
     }
+    @Published var showCountdownInMenuBar = false
     
     // MARK: - Initialization
     

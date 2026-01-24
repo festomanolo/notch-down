@@ -15,29 +15,32 @@ struct DynamicIslandView: View {
     
     var body: some View {
         GeometryReader { geometry in
-            ZStack {
-                // Modern glassmorphism background
-                ModernIslandBackground(
-                    state: viewModel.islandState,
-                    urgency: viewModel.urgencyLevel,
-                    theme: viewModel.currentTheme
+            HStack {
+                Spacer()
+                ZStack {
+                    // Modern glassmorphism background
+                    ModernIslandBackground(
+                        state: viewModel.islandState,
+                        urgency: viewModel.urgencyLevel,
+                        theme: viewModel.currentTheme
+                    )
+                    
+                    // Content layer with modern layout
+                    contentLayer
+                        .opacity(contentOpacity)
+                        .animation(.easeInOut(duration: 0.2), value: viewModel.islandState)
+                }
+                .frame(
+                    width: currentFrameSize.width,
+                    height: currentFrameSize.height
                 )
-                
-                // Content layer with modern layout
-                contentLayer
-                    .opacity(contentOpacity)
-                    .animation(.easeInOut(duration: 0.2), value: viewModel.islandState)
+                Spacer()
             }
-            .frame(
-                width: currentFrameSize.width,
-                height: currentFrameSize.height
-            )
+            .frame(maxWidth: .infinity)
             .animation(SpringAnimator.morphToExpanded(), value: viewModel.islandState)
         }
-        .frame(
-            width: currentFrameSize.width,
-            height: currentFrameSize.height
-        )
+        .frame(maxWidth: .infinity)
+        .frame(height: currentFrameSize.height)
     }
     
     // MARK: - Content Layer
@@ -851,6 +854,9 @@ struct AboutView: View {
             VStack(spacing: 8) {
                 // System Settings Toggles
                 VStack(spacing: 8) {
+                    Toggle("Show Countdown in Menu Bar", isOn: $viewModel.showCountdownInMenuBar)
+                        .toggleStyle(LiquidGlassToggleStyle())
+                        
                     Toggle("Start at Login", isOn: $viewModel.startAtLogin)
                         .toggleStyle(LiquidGlassToggleStyle())
                     

@@ -266,12 +266,14 @@ struct CompactCountdownDisplay: View {
                 Text(actionDisplayName)
                     .font(.system(size: fontSize * 0.9, weight: .bold, design: .rounded))
                     .foregroundColor(urgencyColor.opacity(0.8))
+                    .fixedSize(horizontal: true, vertical: false)
                 
                 Text(viewModel.timeString)
                     .font(.system(size: fontSize, weight: .semibold, design: .monospaced))
                     .foregroundColor(urgencyColor)
                     .contentTransition(.numericText(countsDown: true))
                     .animation(SpringAnimator.slotMachineRoll(), value: viewModel.timeRemaining)
+                    .fixedSize(horizontal: true, vertical: false)
             }
         }
         .padding(.horizontal, 10)

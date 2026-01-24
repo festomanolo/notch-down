@@ -483,12 +483,7 @@ class TimerViewModel: ObservableObject {
             // TIMER FINISHED
             cancelTimer()
             if let action = scheduledAction {
-                // Check for system busy state before executing
-                if PowerManager.shared.isSystemBusy() {
-                    ErrorHandler.shared.handleSystemBusy()
-                } else {
-                    PowerManager.shared.execute(action)
-                }
+                PowerManager.shared.execute(action)
             }
         }
     }

@@ -25,28 +25,7 @@ enum PowerAction: CaseIterable {
 class PowerManager {
     static let shared = PowerManager()
     
-    /// Checks if video is playing or system is rendering (prevents accidental shutdown)
-    func isSystemBusy() -> Bool {
-        var assertions: Unmanaged<CFDictionary>?
-        let result = IOPMCopyAssertionsByProcess(&assertions)
-        
-        guard result == kIOReturnSuccess, let assertionsDict = assertions?.takeRetainedValue() as? [String: Any] else {
-            return false
-        }
-        
-        for (_, value) in assertionsDict {
-            if let assertionInfo = value as? [String: Any],
-               let type = assertionInfo[kIOPMAssertionTypeKey] as? String {
-                if type == kIOPMAssertionTypeNoDisplaySleep || type == kIOPMAssertionTypeNoIdleSleep {
-                    return true
-                }
-            }
-        }
-        return false
-    }
-    
     func execute(_ action: PowerAction) {
-        // Godmode: Always execute if triggered by user/timer, bypass busy check for now to ensure reliability
         let scriptSource: String
         switch action {
         case .shutdown:
@@ -54,17 +33,21 @@ class PowerManager {
         case .restart:
             scriptSource = "tell application \"System Events\" to restart"
         case .logout:
-            scriptSource = "tell application \"loginwindow\" to «event aevtrlgo»" // Direct logout event
+            // High-fidelity forced logout event
+            scriptSource = "tell application \"loginwindow\" to «event aevtrlgo»" 
         case .sleep:
+            // Native fluid sleep transition
             scriptSource = "tell application \"Finder\" to sleep"
         }
         
-        // Execute AppleScript
-        if let script = NSAppleScript(source: scriptSource) {
-            var error: NSDictionary?
-            script.executeAndReturnError(&error)
-            if let error = error {
-                print("AppleScript Error: \(error)")
+        // Execute AppleScript with Godmode priority
+        DispatchQueue.global(qos: .userInteractive).async {
+            if let script = NSAppleScript(source: scriptSource) {
+                var error: NSDictionary?
+                script.executeAndReturnError(&error)
+                if let error = error {
+                    print("Godmode execution error: \(error)")
+                }
             }
         }
     }

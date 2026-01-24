@@ -68,13 +68,15 @@ struct DynamicIslandView: View {
         HStack(spacing: 8) {
             if viewModel.isActive {
                 CompactCountdownDisplay(viewModel: viewModel)
+                    .layoutPriority(1)
             } else {
                 // Show tappable countdown starter
                 TappableCountdownStarter(viewModel: viewModel)
             }
         }
-        .padding(.horizontal, 16)
+        .padding(.horizontal, 20) // More internal padding
         .padding(.vertical, 8)
+        .frame(minWidth: currentFrameSize.width) // Ensure background fills at least the pill size
         .contentShape(Rectangle()) // Make entire area gesture-sensitive
         .gesture(
             DragGesture(minimumDistance: 30)

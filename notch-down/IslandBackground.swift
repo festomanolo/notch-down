@@ -81,14 +81,7 @@ struct IslandBackground: View {
     
     /// Calculates current corner radius based on island state with continuous morphing
     private var currentCornerRadius: Double {
-        switch state {
-        case .collapsed, .collapsing:
-            return IslandGeometry.cornerRadius.collapsed
-        case .expanded, .critical, .about:
-            return IslandGeometry.cornerRadius.expanded
-        case .expanding:
-            return IslandGeometry.interpolateCornerRadius(progress: morphProgress)
-        }
+        MorphingGeometry.cornerRadius(for: state)
     }
     
     // MARK: - Border Styling
@@ -134,12 +127,12 @@ struct IslandBackground: View {
     
     /// Dynamic glow blur radius
     private var glowRadius: Double {
-        GlowState.calculateGlowRadius(urgency: urgency)
+        MorphingGeometry.calculateGlowRadius(urgency: urgency)
     }
     
     /// Glow opacity with pulsing effect
     private var glowOpacity: Double {
-        let baseOpacity = GlowState.forUrgency(urgency).intensity
+        let baseOpacity = MorphingGeometry.calculateGlowIntensity(urgency: urgency, animationPhase: .idle)
         
         if urgency.pulseRate > 0 {
             // More aggressive pulse for strobe effect

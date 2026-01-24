@@ -7,7 +7,7 @@ APP_BUNDLE="build/Release/${APP_NAME}.app"
 DMG_NAME="NotchDown_Professional_Installer.dmg"
 DMG_TMP="temp_pro.dmg"
 VOL_NAME="NotchDown Installer"
-BG_IMAGE="/Users/festomanolo/.gemini/antigravity/brain/4f86be94-eb81-4f23-9799-f481480aa5ef/dmg_background_v2_smooth_drift_1769235352511.png"
+BG_IMAGE="/Users/festomanolo/.gemini/antigravity/brain/4f86be94-eb81-4f23-9799-f481480aa5ef/dmg_background_godmode_final_1769255851671.png"
 LICENSE_FILE="License.txt"
 
 # Cleanup

@@ -74,9 +74,9 @@ struct DynamicIslandView: View {
                 TappableCountdownStarter(viewModel: viewModel)
             }
         }
-        .padding(.horizontal, 20) // More internal padding
+        .padding(.horizontal, 24)
         .padding(.vertical, 8)
-        .frame(minWidth: currentFrameSize.width) // Ensure background fills at least the pill size
+        .frame(width: 450, height: 40) // Fixed size for absolute stability
         .contentShape(Rectangle()) // Make entire area gesture-sensitive
         .gesture(
             DragGesture(minimumDistance: 30)

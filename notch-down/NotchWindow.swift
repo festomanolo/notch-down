@@ -45,13 +45,23 @@ class NotchWindowController: NSWindowController {
                 let view = window.contentView
                 
                 // Check if the click is within any subview of the window
-                if let hitView = view?.hitTest(locationInWindow) {
-                    // Click is inside a view, don't collapse
+                if let contentView = window.contentView, 
+                   let hitView = contentView.hitTest(locationInWindow),
+                   hitView !== contentView {
+                    // Click is inside a subview (not just the container), don't collapse
+                    // This creates a pass-through effect for the main container if it catches hits
                     return event
                 }
                 
                 // If we get here, the click might be in the transparent padding area
                 // We'll only collapse if the click is truly distant or if the window loses focus
+                // Double check if the location is strictly within the visual bounds (center)
+                // Double check if the location is strictly within the visual bounds (center)
+                let visualBounds = window.contentView?.bounds.insetBy(dx: 80, dy: 80) ?? .zero
+                if visualBounds.contains(locationInWindow) {
+                     return event
+                }
+                
                 NotificationCenter.default.post(name: Notification.Name("CollapseDynamicIsland"), object: nil)
             }
             return event
@@ -63,8 +73,10 @@ class NotchWindowController: NSWindowController {
     }
     
     func showWithMorphAnimation() {
+        guard let window = window else { return }
+        
         let mouseLocation = NSEvent.mouseLocation
-        let screen = NSScreen.screens.first { NSMouseInRect(mouseLocation, $0.frame, false) } ?? NSScreen.main ?? NSScreen.screens.first!
+        guard let screen = NSScreen.screens.first(where: { NSMouseInRect(mouseLocation, $0.frame, false) }) ?? NSScreen.main ?? NSScreen.screens.first else { return }
         
         let screenWidth = screen.frame.width
         let screenHeight = screen.frame.height
@@ -103,7 +115,7 @@ class NotchWindowController: NSWindowController {
         guard let window = window else { return }
         
         let mouseLocation = NSEvent.mouseLocation
-        let screen = NSScreen.screens.first { NSMouseInRect(mouseLocation, $0.frame, false) } ?? NSScreen.main ?? NSScreen.screens.first!
+        guard let screen = NSScreen.screens.first(where: { NSMouseInRect(mouseLocation, $0.frame, false) }) ?? NSScreen.main ?? NSScreen.screens.first else { return }
         
         let screenWidth = screen.frame.width
         let screenHeight = screen.frame.height
@@ -212,10 +224,16 @@ class NotchWindowController: NSWindowController {
 
 class NotchPanel: NSPanel {
     init(rootView: AnyView) {
-        let hostingController = NSHostingController(rootView: rootView.padding(80)) // Add padding in SwiftUI too
+        // Wrap root view with toast overlay
+        let contentWithToast = ZStack {
+            rootView
+            ToastContainerView()
+        }
+        
+        let hostingController = NSHostingController(rootView: contentWithToast.padding(80)) // Add padding in SwiftUI too
         
         super.init(
-            contentRect: NSRect(x: 0, y: 0, width: 1000, height: 440), // Extreme base size for space
+            contentRect: NSRect(x: 0, y: 0, width: 1200, height: 600), // Larger base size for content
             styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
             defer: false
@@ -229,5 +247,13 @@ class NotchPanel: NSPanel {
         self.backgroundColor = .clear
         self.hasShadow = false
         self.isOpaque = false
+    }
+    
+    override var canBecomeKey: Bool {
+        return true
+    }
+    
+    override var canBecomeMain: Bool {
+        return false
     }
 }

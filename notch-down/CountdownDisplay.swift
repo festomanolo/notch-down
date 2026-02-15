@@ -89,7 +89,7 @@ struct CountdownDisplay: View {
     // MARK: - Action Description
     
     private var actionDescription: some View {
-        Text("System will shut down")
+        Text("System will \(viewModel.scheduledAction?.displayName.lowercased() ?? "shut down")")
             .font(.system(size: 14, weight: .medium, design: .rounded))
             .foregroundColor(viewModel.currentTheme.secondaryTextColor)
             .multilineTextAlignment(.center)
@@ -296,12 +296,8 @@ struct CompactCountdownDisplay: View {
     }
     
     private var actionDisplayName: String {
-        switch viewModel.currentPowerAction {
-        case .shutdown: return "Shutdown"
-        case .restart: return "Restart"
-        case .sleep: return "Sleep"
-        case .logout: return "Log Out"
-        }
+        guard let action = viewModel.scheduledAction else { return viewModel.currentPowerAction.displayName }
+        return action.displayName
     }
     
     private var iconName: String {

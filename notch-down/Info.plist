@@ -49,6 +49,8 @@
         <key>LSMinimumSystemVersion</key>
         <string>26.2</string>
         <key>NSAppleEventsUsageDescription</key>
-        <string>Needed to send shutdown commands</string>
+        <string>NotchDown needs permission to send power management commands (shutdown, restart, sleep, and logout) to System Events.</string>
+        <key>NSSystemAdministrationUsageDescription</key>
+        <string>NotchDown requires system administration access to execute power management operations safely.</string>
 </dict>
 </plist>

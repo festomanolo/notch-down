@@ -14,33 +14,24 @@ struct DynamicIslandView: View {
     @ObservedObject var viewModel: TimerViewModel
     
     var body: some View {
-        GeometryReader { geometry in
-            HStack {
-                Spacer()
-                ZStack {
-                    // Modern glassmorphism background
-                    ModernIslandBackground(
-                        state: viewModel.islandState,
-                        urgency: viewModel.urgencyLevel,
-                        theme: viewModel.currentTheme
-                    )
-                    
-                    // Content layer with modern layout
-                    contentLayer
-                        .opacity(contentOpacity)
-                        .animation(.easeInOut(duration: 0.2), value: viewModel.islandState)
-                }
-                .frame(
-                    width: currentFrameSize.width,
-                    height: currentFrameSize.height
-                )
-                Spacer()
-            }
-            .frame(maxWidth: .infinity)
-            .animation(SpringAnimator.morphToExpanded(), value: viewModel.islandState)
+        ZStack {
+            // Modern glassmorphism background
+            ModernIslandBackground(
+                state: viewModel.islandState,
+                urgency: viewModel.urgencyLevel,
+                theme: viewModel.currentTheme
+            )
+            
+            // Content layer with modern layout
+            contentLayer
+                .opacity(contentOpacity)
+                .animation(.easeInOut(duration: 0.2), value: viewModel.islandState)
         }
-        .frame(maxWidth: .infinity)
-        .frame(height: currentFrameSize.height)
+        .frame(
+            width: currentFrameSize.width,
+            height: currentFrameSize.height
+        )
+        .animation(SpringAnimator.morphToExpanded(), value: viewModel.islandState)
     }
     
     // MARK: - Content Layer
@@ -68,7 +59,6 @@ struct DynamicIslandView: View {
         HStack(spacing: 8) {
             if viewModel.isActive {
                 CompactCountdownDisplay(viewModel: viewModel)
-                    .layoutPriority(1)
             } else {
                 // Show tappable countdown starter
                 TappableCountdownStarter(viewModel: viewModel)
@@ -76,7 +66,7 @@ struct DynamicIslandView: View {
         }
         .padding(.horizontal, 24)
         .padding(.vertical, 8)
-        .frame(width: 600, height: 40) // Global widen fix
+        .frame(maxWidth: .infinity)
         .contentShape(Rectangle()) // Make entire area gesture-sensitive
         .gesture(
             DragGesture(minimumDistance: 30)
@@ -123,6 +113,11 @@ struct DynamicIslandView: View {
     
     private var expandedContent: some View {
         VStack(spacing: 16) {
+            // Permission warning banner (if needed)
+            if viewModel.showPermissionWarning {
+                PermissionWarningBanner(viewModel: viewModel)
+            }
+            
             // Top row: Controls, time display, and minimize button
             HStack {
                 // Power dropdown
@@ -338,34 +333,36 @@ struct PowerDropdown: View {
     var body: some View {
         Menu {
             Button(action: {
-                viewModel.startTimer(minutes: 5, action: .shutdown)
+                viewModel.currentPowerAction = .shutdown
             }) {
                 Label("Shutdown", systemImage: "power")
             }
             
             Button(action: {
-                viewModel.startTimer(minutes: 5, action: .restart)
+                viewModel.currentPowerAction = .restart
             }) {
                 Label("Restart", systemImage: "arrow.clockwise")
             }
             
             Button(action: {
-                viewModel.startTimer(minutes: 5, action: .sleep)
+                viewModel.currentPowerAction = .sleep
             }) {
                 Label("Sleep", systemImage: "moon.fill")
             }
             
             Button(action: {
-                viewModel.startTimer(minutes: 5, action: .logout)
+                viewModel.currentPowerAction = .logout
             }) {
                 Label("Log Out", systemImage: "rectangle.portrait.and.arrow.right")
             }
         } label: {
             HStack(spacing: 6) {
-                Image(systemName: "power")
+                Image(systemName: viewModel.currentPowerAction.iconName)
                     .font(.system(size: 11, weight: .medium))
-                Text("Power")
+                
+                Text(viewModel.currentPowerAction.displayName)
                     .font(.system(size: 12, weight: .medium, design: .rounded))
+                
                 Image(systemName: "chevron.down")
                     .font(.system(size: 10, weight: .medium))
             }
@@ -825,13 +822,23 @@ struct AboutView: View {
                         }
                     
                     // Profile Image
-                    Image(nsImage: NSImage(contentsOfFile: "/Users/festomanolo/Desktop/projects/notch-down/notch-down/Assets.xcassets/festomanolo.jpeg") ?? NSImage())
-                        .resizable()
-                        .aspectRatio(contentMode: .fill)
-                        .frame(width: 80, height: 80)
-                        .clipShape(Circle())
-                        .overlay(Circle().stroke(Color.white.opacity(0.2), lineWidth: 1))
-                        .shadow(color: .blue.opacity(0.3), radius: 10)
+                    if let profileImage = loadProfileImage() {
+                        Image(nsImage: profileImage)
+                            .resizable()
+                            .aspectRatio(contentMode: .fill)
+                            .frame(width: 80, height: 80)
+                            .clipShape(Circle())
+                            .overlay(Circle().stroke(Color.white.opacity(0.2), lineWidth: 1))
+                            .shadow(color: .blue.opacity(0.3), radius: 10)
+                    } else {
+                        // Fallback icon if image not found
+                        Image(systemName: "person.circle.fill")
+                            .resizable()
+                            .aspectRatio(contentMode: .fit)
+                            .frame(width: 80, height: 80)
+                            .foregroundColor(.blue)
+                            .shadow(color: .blue.opacity(0.3), radius: 10)
+                    }
                 }
                 
                 VStack(alignment: .leading, spacing: 6) {
@@ -875,34 +882,79 @@ struct AboutView: View {
                         .transition(.opacity)
                 }
                 
-                Button {
-                    viewModel.handleCheckForUpdates()
-                } label: {
-                    HStack(spacing: 8) {
-                        if viewModel.isCheckingForUpdates {
-                            ProgressView()
-                                .controlSize(.small)
-                        } else {
-                            Image(systemName: "arrow.clockwise.circle")
+                HStack(spacing: 8) {
+                    Button {
+                        viewModel.handleCheckForUpdates()
+                    } label: {
+                        HStack(spacing: 8) {
+                            if viewModel.isCheckingForUpdates {
+                                ProgressView()
+                                    .controlSize(.small)
+                            } else {
+                                Image(systemName: "arrow.clockwise.circle")
+                            }
+                            Text(viewModel.isCheckingForUpdates ? "Checking..." : "Check Updates")
                         }
-                        Text(viewModel.isCheckingForUpdates ? "Checking..." : "Check for Updates")
+                        .font(.system(size: 12, weight: .bold, design: .rounded))
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 7)
+                        .background(
+                            Capsule()
+                                .fill(LinearGradient(colors: [.blue, .blue.opacity(0.7)], startPoint: .top, endPoint: .bottom))
+                                .shadow(color: .blue.opacity(0.3), radius: 5, x: 0, y: 3)
+                        )
                     }
-                    .font(.system(size: 13, weight: .bold, design: .rounded))
-                    .foregroundColor(.white)
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 8)
-                    .background(
-                        Capsule()
-                            .fill(LinearGradient(colors: [.blue, .blue.opacity(0.7)], startPoint: .top, endPoint: .bottom))
-                            .shadow(color: .blue.opacity(0.3), radius: 5, x: 0, y: 3)
-                    )
+                    .buttonStyle(PlainButtonStyle())
+                    .disabled(viewModel.isCheckingForUpdates)
+                    
+                    Button {
+                        DiagnosticsManager.shared.runDiagnostics {
+                            // Optionally show results
+                        }
+                    } label: {
+                        HStack(spacing: 8) {
+                            if DiagnosticsManager.shared.isRunningDiagnostics {
+                                ProgressView()
+                                    .controlSize(.small)
+                            } else {
+                                Image(systemName: "stethoscope")
+                            }
+                            Text("Diagnostics")
+                        }
+                        .font(.system(size: 12, weight: .bold, design: .rounded))
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 7)
+                        .background(
+                            Capsule()
+                                .fill(LinearGradient(colors: [.green, .green.opacity(0.7)], startPoint: .top, endPoint: .bottom))
+                                .shadow(color: .green.opacity(0.3), radius: 5, x: 0, y: 3)
+                        )
+                    }
+                    .buttonStyle(PlainButtonStyle())
+                    .disabled(DiagnosticsManager.shared.isRunningDiagnostics)
                 }
-                .buttonStyle(PlainButtonStyle())
-                .disabled(viewModel.isCheckingForUpdates)
             }
         }
         .padding(.horizontal, 24)
         .padding(.vertical, 16)
+    }
+    
+    // Helper function to load profile image from assets
+    private func loadProfileImage() -> NSImage? {
+        // Try to load from asset catalog first
+        if let image = NSImage(named: "festomanolo") {
+            return image
+        }
+        
+        // Try to load from bundle resources
+        if let imagePath = Bundle.main.path(forResource: "festomanolo", ofType: "jpeg"),
+           let image = NSImage(contentsOfFile: imagePath) {
+            return image
+        }
+        
+        return nil
     }
 }
 
@@ -1004,5 +1056,68 @@ struct LiquidToggle: View {
     var body: some View {
         Toggle(label, isOn: $isOn)
             .toggleStyle(LiquidGlassToggleStyle())
+    }
+}
+
+// MARK: - Permission Warning Banner
+
+struct PermissionWarningBanner: View {
+    @ObservedObject var viewModel: TimerViewModel
+    
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(.system(size: 18))
+                .foregroundColor(.orange)
+            
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Permissions Required")
+                    .font(.system(size: 13, weight: .bold, design: .rounded))
+                    .foregroundColor(viewModel.currentTheme.textColor)
+                Text("Grant automation access in System Settings")
+                    .font(.system(size: 11, weight: .medium, design: .rounded))
+                    .foregroundColor(viewModel.currentTheme.secondaryTextColor)
+            }
+            
+            Spacer()
+            
+            Button(action: {
+                if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Automation") {
+                    NSWorkspace.shared.open(url)
+                }
+            }) {
+                Text("Open Settings")
+                    .font(.system(size: 11, weight: .semibold, design: .rounded))
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .background(
+                        Capsule()
+                            .fill(Color.orange)
+                    )
+            }
+            .buttonStyle(PlainButtonStyle())
+            
+            Button(action: {
+                withAnimation {
+                    viewModel.showPermissionWarning = false
+                }
+            }) {
+                Image(systemName: "xmark.circle.fill")
+                    .font(.system(size: 16))
+                    .foregroundColor(viewModel.currentTheme.secondaryTextColor)
+            }
+            .buttonStyle(PlainButtonStyle())
+        }
+        .padding(12)
+        .background(
+            RoundedRectangle(cornerRadius: 12)
+                .fill(Color.orange.opacity(0.15))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12)
+                        .stroke(Color.orange.opacity(0.3), lineWidth: 1)
+                )
+        )
+        .transition(.move(edge: .top).combined(with: .opacity))
     }
 }

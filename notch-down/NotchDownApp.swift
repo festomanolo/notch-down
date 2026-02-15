@@ -96,6 +96,29 @@ struct MenuBarContent: View {
         
         Divider()
         
+        // Diagnostics
+        Button("Run Diagnostics") {
+            DiagnosticsManager.shared.runDiagnostics {
+                // Show results in console or alert
+                let report = DiagnosticsManager.shared.generateReport()
+                print(report)
+                
+                // Show summary alert
+                let alert = NSAlert()
+                alert.messageText = "Diagnostics Complete"
+                alert.informativeText = "Check console for full report or export from About page."
+                alert.alertStyle = .informational
+                alert.addButton(withTitle: "OK")
+                alert.runModal()
+            }
+        }
+        
+        Button("Verify Permissions") {
+            viewModel.verifyPermissions()
+        }
+        
+        Divider()
+        
         Button("Quit NotchDown") {
             NSApplication.shared.terminate(nil)
         }
@@ -227,12 +250,13 @@ class TimerViewModel: ObservableObject {
     
     // MARK: - Private Properties
     private var timer: Timer?
-    private var scheduledAction: PowerAction?
+    @Published var scheduledAction: PowerAction?
     private var windowController: NotchWindowController?
     private var themeManagerObserver: AnyCancellable?
     private var sleepObserver: NSObjectProtocol?
     private var wakeObserver: NSObjectProtocol?
     private var batteryObserver: AnyCancellable?
+    private var powerManagerObserver: AnyCancellable?
     
     // Audio alerts
     private let warningSound = NSSound(named: "Glass")
@@ -248,6 +272,10 @@ class TimerViewModel: ObservableObject {
     // About Page State
     @Published var isCheckingForUpdates = false
     @Published var updateStatusMessage = ""
+    
+    // Permission State
+    @Published var hasPermissions = true
+    @Published var showPermissionWarning = false
     
     // Background & System Integration
     @Published var startAtLogin = false {
@@ -307,11 +335,23 @@ class TimerViewModel: ObservableObject {
                 self?.collapseIsland()
             }
         }
+        
+        // Observe PowerManager errors
+        powerManagerObserver = PowerManager.shared.$lastError
+            .sink { [weak self] error in
+                if let error = error {
+                    self?.handlePowerManagerError(error)
+                }
+            }
+        
+        // Verify permissions on startup
+        verifyPermissions()
     }
     
     deinit {
         themeManagerObserver?.cancel()
         batteryObserver?.cancel()
+        powerManagerObserver?.cancel()
         removeSystemObservers()
     }
     
@@ -369,6 +409,9 @@ class TimerViewModel: ObservableObject {
         updateUrgencyLevel()
         animationPhase = .rolling // Start with rolling animation for countdown
         
+        // Show feedback
+        ToastManager.shared.success("Timer started: \(action.displayName) in \(Int(minutes))m")
+        
         // Auto-minimize to pill shape when timer starts
         if islandState == .expanded {
             collapseIsland()
@@ -387,6 +430,8 @@ class TimerViewModel: ObservableObject {
     func cancelTimer() {
         timer?.invalidate()
         timer = nil
+        
+        let wasActive = isActive
         isActive = false
         
         // Reset Dynamic Island state
@@ -400,6 +445,11 @@ class TimerViewModel: ObservableObject {
         warningSound?.stop()
         criticalSound?.stop()
         heartbeatSound?.stop()
+        
+        // Show feedback if timer was active
+        if wasActive {
+            ToastManager.shared.info("Timer cancelled")
+        }
         
         hideWindow()
     }
@@ -481,9 +531,28 @@ class TimerViewModel: ObservableObject {
             handleAudioAlerts()
         } else {
             // TIMER FINISHED
+            let actionToExecute = scheduledAction
             cancelTimer()
-            if let action = scheduledAction {
-                PowerManager.shared.execute(action)
+            
+            if let action = actionToExecute {
+                // Show starting notification
+                ToastManager.shared.info("Executing \(action.displayName)...")
+                
+                // Execute with feedback
+                PowerManager.shared.execute(action) { [weak self] result in
+                    switch result {
+                    case .success:
+                        // Action executed successfully
+                        ToastManager.shared.success("\(action.displayName) command sent successfully")
+                        print("Power action \(action.displayName) executed successfully")
+                    case .failure(let error):
+                        // Show error to user
+                        ToastManager.shared.error("Failed: \(error.localizedDescription)")
+                        DispatchQueue.main.async {
+                            self?.showPowerActionError(error)
+                        }
+                    }
+                }
             }
         }
     }
@@ -550,6 +619,9 @@ class TimerViewModel: ObservableObject {
             timeRemaining += 300 // 5 minutes
             animationPhase = .rolling
         }
+        
+        // Show feedback
+        ToastManager.shared.success("Timer snoozed: +5 minutes")
         
         // Brief visual feedback
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
@@ -753,5 +825,58 @@ class TimerViewModel: ObservableObject {
     
     private func hideWindow() {
         windowController?.hide()
+    }
+    
+    // MARK: - Permission Management
+    
+    /// Verify that the app has necessary permissions
+    func verifyPermissions() {
+        PowerManager.shared.verifyPermissions { [weak self] hasPermission in
+            DispatchQueue.main.async {
+                self?.hasPermissions = hasPermission
+                if !hasPermission {
+                    self?.showPermissionWarning = true
+                }
+            }
+        }
+    }
+    
+    /// Handle PowerManager errors
+    private func handlePowerManagerError(_ error: PowerManagerError) {
+        // Update UI state
+        if case .permissionDenied = error {
+            hasPermissions = false
+            showPermissionWarning = true
+        }
+    }
+    
+    /// Show power action error to user
+    private func showPowerActionError(_ error: PowerManagerError) {
+        let alert = NSAlert()
+        alert.messageText = "Power Action Failed"
+        alert.informativeText = error.localizedDescription
+        alert.alertStyle = .critical
+        alert.addButton(withTitle: "OK")
+        
+        if case .permissionDenied = error {
+            alert.addButton(withTitle: "Open Settings")
+            if alert.runModal() == .alertSecondButtonReturn {
+                PowerManager.shared.testAction(.shutdown) { _ in }
+            }
+        } else {
+            alert.runModal()
+        }
+    }
+    
+    /// Test power action (for debugging)
+    func testPowerAction(_ action: PowerAction) {
+        PowerManager.shared.testAction(action) { [weak self] success in
+            DispatchQueue.main.async {
+                self?.hasPermissions = success
+                if !success {
+                    self?.showPermissionWarning = true
+                }
+            }
+        }
     }
 }

@@ -16,15 +16,15 @@ struct MorphingGeometry {
     
     /// Base geometry definitions for Dynamic Island states
     private struct BaseGeometry {
-        static let collapsedSize = CGSize(width: 600, height: 40) // Extreme width to kill truncation forever
-        static let expandedSize = CGSize(width: 480, height: 120) // Much wider, shorter
-        static let criticalSize = CGSize(width: 500, height: 130) // Slightly larger for critical state
-        static let aboutSize = CGSize(width: 360, height: 220) // Taller for profile and about info
+        static let collapsedSize = CGSize(width: 200, height: 37) // Standard Dynamic Island size
+        static let expandedSize = CGSize(width: 400, height: 200) // Compact expanded state
+        static let criticalSize = CGSize(width: 420, height: 220) // Slightly larger for urgent alerts
+        static let aboutSize = CGSize(width: 420, height: 300) // For info/settings
         
-        static let collapsedRadius: Double = 22.0 // More fluid, Apple-like
-        static let expandedRadius: Double = 36.0
-        static let criticalRadius: Double = 40.0
-        static let aboutRadius: Double = 44.0
+        static let collapsedRadius: Double = 18.5 // Perfectly round pill ends
+        static let expandedRadius: Double = 24.0
+        static let criticalRadius: Double = 26.0
+        static let aboutRadius: Double = 28.0
     }
     
     // MARK: - Frame Size Calculations

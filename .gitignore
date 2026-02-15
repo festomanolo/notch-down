@@ -27,3 +27,6 @@ xcuserdata/
 # Misc
 *.sh
 !create_dmg.sh
+build_log*.txt
+*.dmg
+DerivedData/

@@ -111,16 +111,16 @@ struct MinimizeButton: View {
     
     var body: some View {
         Button(action: action) {
-            Image(systemName: "minus")
-                .font(.system(size: 12, weight: .medium))
-                .foregroundColor(.white.opacity(0.8))
+            Image(systemName: "chevron.down")
+                .font(.system(size: 12, weight: .bold))
+                .foregroundColor(.white)
                 .frame(width: 24, height: 24)
                 .background(
                     Circle()
-                        .fill(Color.white.opacity(isHovered ? 0.15 : 0.08))
+                        .fill(Color.white.opacity(isHovered ? 0.2 : 0.1))
                         .overlay(
                             Circle()
-                                .stroke(Color.white.opacity(0.2), lineWidth: 1)
+                                .stroke(Color.white.opacity(0.3), lineWidth: 1)
                         )
                 )
         }

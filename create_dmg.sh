@@ -2,13 +2,19 @@
 
 # Configuration
 APP_NAME="notch-down"
-APP_BUNDLE="build/Release/${APP_NAME}.app"
+APP_BUNDLE="DerivedData/Build/Products/Release/${APP_NAME}.app"
 # Final name including professional branding
-DMG_NAME="NotchDown_Professional_Installer.dmg"
-DMG_TMP="temp_pro.dmg"
-VOL_NAME="NotchDown Installer"
-BG_IMAGE="/Users/festomanolo/.gemini/antigravity/brain/4f86be94-eb81-4f23-9799-f481480aa5ef/dmg_background_resized.png"
+DMG_NAME="NotchDown_v1.1.0_Installer.dmg"
+DMG_TMP="temp_notchdown.dmg"
+VOL_NAME="NotchDown v1.1.0"
 LICENSE_FILE="License.txt"
+
+# Check if app exists
+if [ ! -d "${APP_BUNDLE}" ]; then
+    echo "Error: App bundle not found at ${APP_BUNDLE}"
+    echo "Please build the app first with: xcodebuild -scheme notch-down -configuration Release -derivedDataPath ./DerivedData build"
+    exit 1
+fi
 
 # Cleanup
 echo "Cleaning up old build artifacts..."
@@ -18,33 +24,30 @@ rm -rf build/dmg_content
 
 # Preparation
 mkdir -p build/dmg_content
-echo "Preparing contents (App, License, Symlinks)..."
+echo "Preparing contents (App, License, Documentation, Symlinks)..."
 cp -R "${APP_BUNDLE}" build/dmg_content/
-cp "${LICENSE_FILE}" build/dmg_content/
+cp "${LICENSE_FILE}" build/dmg_content/ 2>/dev/null || echo "License file not found, skipping..."
+cp "README.md" build/dmg_content/ 2>/dev/null || echo "README not found, skipping..."
+cp "QUICK_START.md" build/dmg_content/ 2>/dev/null || echo "Quick Start not found, skipping..."
 ln -s /Applications build/dmg_content/Applications
 
-# Create temp DMG (Make it slightly larger for padding)
+# Create temp DMG
 echo "Creating temporary writable disk image..."
-hdiutil create -size 200m -fs HFS+ -volname "${VOL_NAME}" "${DMG_TMP}"
+hdiutil create -size 250m -fs HFS+ -volname "${VOL_NAME}" "${DMG_TMP}"
 
 # Mount DMG with explicit readwrite and noautoopen
 echo "Mounting temporary image (Read-Write)..."
 ATTACH_OUTPUT=$(hdiutil attach -readwrite -noverify -noautoopen "${DMG_TMP}")
 DEVICE=$(echo "$ATTACH_OUTPUT" | egrep '^/dev/' | sed 1q | awk '{print $1}')
-sleep 5
+sleep 3
 
 # Copy contents to mounted DMG
 echo "Copying files to volume..."
 cp -R build/dmg_content/* "/Volumes/${VOL_NAME}/"
 sync
 
-# Add background image
-echo "Applying Retina decoration..."
-mkdir "/Volumes/${VOL_NAME}/.background"
-cp "${BG_IMAGE}" "/Volumes/${VOL_NAME}/.background/background.png"
-
 # Setup window via AppleScript
-echo "Automating Finder layout (Godmode coordinates)..."
+echo "Setting up Finder window layout..."
 osascript <<EOF
 tell application "Finder"
     tell disk "${VOL_NAME}"
@@ -52,18 +55,15 @@ tell application "Finder"
         set current view of container window to icon view
         set toolbar visible of container window to false
         set statusbar visible of container window to false
-        -- Premium Retina scale adjustment
-        set the bounds of container window to {100, 100, 740, 540} -- 640x440
+        set the bounds of container window to {100, 100, 740, 540}
         
         set theViewOptions to the icon view options of container window
         set arrangement of theViewOptions to not arranged
         set icon size of theViewOptions to 110
-        set background picture of theViewOptions to file ".background:background.png"
         
-        -- Center the icons on the "Smooth Drift" path (Godmode coordinates)
-        set position of item "${APP_NAME}.app" to {180, 220}
-        set position of item "Applications" to {460, 220}
-        set position of item "License.txt" to {320, 360}
+        -- Position items
+        set position of item "${APP_NAME}.app" to {180, 180}
+        set position of item "Applications" to {460, 180}
         
         update without registering applications
         delay 2
@@ -73,9 +73,10 @@ end tell
 EOF
 
 # Finalize DMG
-echo "Compressing and finalizing as high-fidelity UDZO..."
+echo "Compressing and finalizing DMG..."
 chmod -Rf go-w "/Volumes/${VOL_NAME}"
 sync
+sleep 2
 hdiutil detach "${DEVICE}"
 hdiutil convert "${DMG_TMP}" -format UDZO -imagekey zlib-level=9 -o "${DMG_NAME}"
 
@@ -84,5 +85,14 @@ rm "${DMG_TMP}"
 rm -rf build/dmg_content
 
 echo "=================================================="
-echo "GODMODE DMG COMPLETED: ${DMG_NAME}"
+echo "✅ DMG CREATED: ${DMG_NAME}"
+echo "=================================================="
+echo ""
+echo "Installation Instructions:"
+echo "1. Double-click ${DMG_NAME} to mount"
+echo "2. Drag notch-down.app to Applications folder"
+echo "3. Launch from Applications or Spotlight"
+echo "4. Grant automation permissions when prompted"
+echo ""
+echo "For help, see README.md or QUICK_START.md"
 echo "=================================================="

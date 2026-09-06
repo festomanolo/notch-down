@@ -33,9 +33,9 @@ class AnimationFallbackManager: ObservableObject {
     
     // MARK: - Performance Thresholds
     
-    private let targetFrameRate: Double = 55.0  // Minimum acceptable frame rate
-    private let maxCPUUsage: Double = 5.0       // Maximum CPU usage (5%)
-    private let maxMemoryUsage: Double = 50.0   // Maximum memory usage (50MB)
+    private let targetFrameRate: Double = 55.0   // Minimum acceptable frame rate
+    private let maxCPUUsage: Double = 80.0       // Maximum CPU usage (% of one core)
+    private let maxMemoryUsage: Double = 600.0   // Maximum resident memory (MB)
     
     // MARK: - Private Properties
     
@@ -55,27 +55,45 @@ class AnimationFallbackManager: ObservableObject {
     
     // MARK: - Animation Level Management
     
-    /// Updates animation level based on performance and accessibility
+    /// Updates animation level based on performance and accessibility.
     func updateAnimationLevel() {
-        // Check performance metrics
-        if currentFrameRate < targetFrameRate || cpuUsage > maxCPUUsage || memoryUsage > maxMemoryUsage {
-            // Degrade animation level
-            switch animationLevel {
-            case .full:
-                animationLevel = .reduced
-            case .reduced:
-                animationLevel = .minimal
-            case .minimal:
-                animationLevel = .staticDisplay
-            case .staticDisplay:
-                break // Already at minimum
-            }
-        } else {
-            // Performance is good, can upgrade if needed
-            if animationLevel != .full {
-                animationLevel = .full
-            }
+        // Honour the system setting first — it is the only signal here that
+        // reflects an actual user preference.
+        if NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
+            setLevel(.minimal)
+            return
         }
+
+        let struggling = currentFrameRate < targetFrameRate
+            || cpuUsage > maxCPUUsage
+            || memoryUsage > maxMemoryUsage
+
+        guard struggling else {
+            // Recover a step at a time rather than snapping straight to full.
+            switch animationLevel {
+            case .staticDisplay: setLevel(.minimal)
+            case .minimal:       setLevel(.reduced)
+            case .reduced:       setLevel(.full)
+            case .full:          break
+            }
+            return
+        }
+
+        // Degrade one step, but never below `.reduced` on a metrics signal:
+        // the old code walked all the way to `.staticDisplay` after three bad
+        // samples and never came back within a session, killing every animation
+        // in the app.
+        switch animationLevel {
+        case .full:    setLevel(.reduced)
+        case .reduced: setLevel(.minimal)
+        default:       break
+        }
+    }
+
+    /// Assigns only on an actual change, so the publisher does not fire every second.
+    private func setLevel(_ level: AnimationLevel) {
+        guard animationLevel != level else { return }
+        animationLevel = level
     }
     
     /// Gets appropriate animation for current level
@@ -169,20 +187,35 @@ class AnimationFallbackManager: ObservableObject {
         frameRateMonitor = nil
     }
     
-    /// Updates performance metrics
+    /// Updates performance metrics.
+    ///
+    /// Reads *this process's* resident footprint. The previous implementation
+    /// used `ProcessInfo.physicalMemory` — the machine's total RAM — divided by
+    /// an arbitrary constant, so on a 64 GB Mac it read as "64 MB over budget"
+    /// forever and permanently disabled the app's animations.
     private func updatePerformanceMetrics() {
-        // Simplified performance monitoring
-        // In a production app, this would use proper system APIs
-        
-        // Memory usage estimation (simplified)
-        let processInfo = ProcessInfo.processInfo
-        memoryUsage = Double(processInfo.physicalMemory) / 1024.0 / 1024.0 / 1000.0 // Rough estimate
-        
-        // CPU usage would require more complex calculation
-        // For now, we'll use a simplified approach
-        cpuUsage = 0.0 // Placeholder - would need proper CPU monitoring
-        
-        // Update animation level based on metrics
+        let newMemory = Self.residentMemoryMB() ?? memoryUsage
+
+        // Assign through the change check to avoid a publish every second.
+        if abs(newMemory - memoryUsage) > 1.0 {
+            memoryUsage = newMemory
+        }
+
         updateAnimationLevel()
+    }
+
+    /// Resident memory of this process, in megabytes.
+    private static func residentMemoryMB() -> Double? {
+        var info = task_vm_info_data_t()
+        var count = mach_msg_type_number_t(MemoryLayout<task_vm_info_data_t>.size / MemoryLayout<natural_t>.size)
+
+        let result = withUnsafeMutablePointer(to: &info) {
+            $0.withMemoryRebound(to: integer_t.self, capacity: Int(count)) {
+                task_info(mach_task_self_, task_flavor_t(TASK_VM_INFO), $0, &count)
+            }
+        }
+
+        guard result == KERN_SUCCESS else { return nil }
+        return Double(info.phys_footprint) / 1024.0 / 1024.0
     }
 }

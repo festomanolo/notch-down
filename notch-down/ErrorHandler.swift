@@ -39,7 +39,8 @@ class ErrorHandler: ObservableObject {
     
     // MARK: - Private Properties
     
-    private var sleepWakeObserver: NSObjectProtocol?
+    private var sleepObserver: NSObjectProtocol?
+    private var wakeObserver: NSObjectProtocol?
     private var timerStateBackup: TimerStateBackup?
     
     // MARK: - Initialization
@@ -49,9 +50,8 @@ class ErrorHandler: ObservableObject {
     }
     
     deinit {
-        if let observer = sleepWakeObserver {
-            NotificationCenter.default.removeObserver(observer)
-        }
+        let center = NSWorkspace.shared.notificationCenter
+        [sleepObserver, wakeObserver].compactMap { $0 }.forEach(center.removeObserver)
     }
     
     // MARK: - Error Handling
@@ -117,58 +117,51 @@ class ErrorHandler: ObservableObject {
     
     // MARK: - Timer State Preservation
     
-    /// Backs up timer state before system sleep
+    /// Records a snapshot of the countdown for diagnostics.
+    ///
+    /// Recovery itself is no longer done here: `TimerViewModel` stores an
+    /// absolute deadline and recomputes from it on wake. The old restore path
+    /// wrote `timeRemaining` back without restarting the run-loop timer, which
+    /// left the countdown frozen on screen after every sleep.
+    @MainActor
     func backupTimerState(viewModel: TimerViewModel) {
         timerStateBackup = TimerStateBackup(
             timeRemaining: viewModel.timeRemaining,
             isActive: viewModel.isActive,
-            scheduledAction: nil, // Would need to store this
+            scheduledAction: viewModel.scheduledAction,
             timestamp: Date()
         )
     }
-    
-    /// Restores timer state after system wake
-    func restoreTimerState(viewModel: TimerViewModel) {
-        guard let backup = timerStateBackup else { return }
-        
-        let timeElapsed = Date().timeIntervalSince(backup.timestamp)
-        let newTimeRemaining = max(0, backup.timeRemaining - timeElapsed)
-        
-        if newTimeRemaining > 0 && backup.isActive {
-            // Restore timer
-            viewModel.timeRemaining = newTimeRemaining
-            viewModel.isActive = backup.isActive
-        } else if backup.isActive {
-            // Timer expired during sleep
-            handleTimerStateLoss()
-            viewModel.cancelTimer()
-        }
-        
-        timerStateBackup = nil
+
+    /// The last recorded countdown snapshot, if any.
+    func lastTimerSnapshot() -> (timeRemaining: TimeInterval, isActive: Bool, timestamp: Date)? {
+        guard let backup = timerStateBackup else { return nil }
+        return (backup.timeRemaining, backup.isActive, backup.timestamp)
     }
     
     // MARK: - System Observers
     
-    /// Sets up observers for system sleep/wake events
+    /// Sets up observers for system sleep/wake events.
+    ///
+    /// Both handles are retained. The wake observer used to be stored in a
+    /// local, so it was never removed and leaked for the life of the process.
     private func setupSystemObservers() {
-        // Observe system sleep
-        sleepWakeObserver = NSWorkspace.shared.notificationCenter.addObserver(
+        let center = NSWorkspace.shared.notificationCenter
+
+        sleepObserver = center.addObserver(
             forName: NSWorkspace.willSleepNotification,
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            // System is about to sleep
-            // Timer state will be backed up by the view model
+            self?.isSystemBusy = true
         }
-        
-        // Observe system wake
-        let wakeObserver = NSWorkspace.shared.notificationCenter.addObserver(
+
+        wakeObserver = center.addObserver(
             forName: NSWorkspace.didWakeNotification,
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            // System has woken up
-            // Timer state will be restored by the view model
+            self?.isSystemBusy = false
         }
     }
     

@@ -5,255 +5,262 @@
 //  Created by festomanolo on 22/01/2026.
 //
 
-//
-//  NotchWindow.swift
-//  notch-down
-//
-//  Created by festomanolo on 22/01/2026.
-//
-
 import AppKit
 import SwiftUI
 
+/// Transparent margin around the island, giving shadows, glow and the attention
+/// nudge room to render inside the window.
+let notchWindowPadding: CGFloat = 80
+
+/// Coordinate space the island reports its live frame in, for hit testing.
+enum NotchCoordinateSpace {
+    static let root = "NotchDownRoot"
+}
+
+/// The island's current on-screen rectangle, shared from SwiftUI down to the
+/// hosting view so clicks outside it pass through to the app behind.
+final class IslandHitRegion {
+    var rect: CGRect = .zero
+}
+
+// MARK: - Window Controller
+
+/// Owns the panel.
+///
+/// The panel's **size never changes** — see `NotchPanel`. Morphing between
+/// island states is animated entirely by SwiftUI inside a fixed-size window.
+///
+/// This is deliberate. Animating the window frame while SwiftUI simultaneously
+/// animated the island's own frame put two layout systems in a feedback loop:
+/// every intermediate `-[NSView setFrameSize:]` re-entered SwiftUI's
+/// invalidation, which marked the window as needing another Update Constraints
+/// pass, until AppKit's watchdog raised
+///
+///   "…already had more Update Constraints in Window passes than there are
+///    views in the window"
+///
+/// That NSException cannot unwind through the Swift frames it was raised
+/// beneath, so it surfaced as SIGSEGV in `_Unwind_RaiseException`. Keeping the
+/// frame constant removes the loop at its source; only the window *origin* is
+/// ever touched, and `setFrameOrigin` triggers no resize layout at all.
+@MainActor
 class NotchWindowController: NSWindowController {
-    
-    // MARK: - Properties
-    private var currentIslandState: IslandState = .collapsed
-    private var morphAnimationInProgress = false
-    private let windowPadding: CGFloat = 80 // Large padding for shadows and physics
-    private var clickOutsideMonitor: Any?
-    
+
+    private var isPresented = false
+
     convenience init(rootView: AnyView) {
         let window = NotchPanel(rootView: rootView)
         self.init(window: window)
-        setupClickOutsideMonitor()
+        reposition()
     }
-    
-    deinit {
-        if let monitor = clickOutsideMonitor {
-            NSEvent.removeMonitor(monitor)
-        }
-    }
-    
-    private func setupClickOutsideMonitor() {
-        clickOutsideMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown]) { [weak self] event in
-            guard let self = self, let window = self.window, window.isVisible else { return event }
-            
-            // Only collapse if we are expanded and clicking outside the ACTUAL island bounds
-            if self.currentIslandState != .collapsed {
-                let locationInWindow = event.locationInWindow
-                let view = window.contentView
-                
-                // Check if the click is within any subview of the window
-                if let contentView = window.contentView, 
-                   let hitView = contentView.hitTest(locationInWindow),
-                   hitView !== contentView {
-                    // Click is inside a subview (not just the container), don't collapse
-                    // This creates a pass-through effect for the main container if it catches hits
-                    return event
-                }
-                
-                // If we get here, the click might be in the transparent padding area
-                // We'll only collapse if the click is truly distant or if the window loses focus
-                // Double check if the location is strictly within the visual bounds (center)
-                // Double check if the location is strictly within the visual bounds (center)
-                let visualBounds = window.contentView?.bounds.insetBy(dx: 80, dy: 80) ?? .zero
-                if visualBounds.contains(locationInWindow) {
-                     return event
-                }
-                
-                NotificationCenter.default.post(name: Notification.Name("CollapseDynamicIsland"), object: nil)
-            }
-            return event
-        }
-    }
-    
-    func show() {
-        showWithMorphAnimation()
-    }
-    
-    func showWithMorphAnimation() {
-        guard let window = window else { return }
-        
+
+    // MARK: - Geometry
+
+    /// The screen the island should live on: the one under the cursor, falling
+    /// back to the main screen.
+    private func activeScreen() -> NSScreen? {
         let mouseLocation = NSEvent.mouseLocation
-        guard let screen = NSScreen.screens.first(where: { NSMouseInRect(mouseLocation, $0.frame, false) }) ?? NSScreen.main ?? NSScreen.screens.first else { return }
-        
-        let screenWidth = screen.frame.width
-        let screenHeight = screen.frame.height
-        let screenOriginX = screen.frame.origin.x
-        let screenOriginY = screen.frame.origin.y
+        return NSScreen.screens.first(where: { NSMouseInRect(mouseLocation, $0.frame, false) })
+            ?? NSScreen.main
+            ?? NSScreen.screens.first
+    }
+
+    /// Places the window so the island's top edge sits just below the notch.
+    func reposition(to screen: NSScreen? = nil) {
+        guard let window = window, let screen = screen ?? activeScreen() else { return }
+
+        let size = window.frame.size
         let safeAreaTop = screen.safeAreaInsets.top
         let topPadding = safeAreaTop > 0 ? safeAreaTop : 32
-        
-        let contentSize = MorphingGeometry.calculateFrame(for: .expanded)
-        let windowSize = CGSize(width: contentSize.width + (windowPadding * 2), height: contentSize.height + (windowPadding * 2))
-        
-        let finalX = screenOriginX + (screenWidth / 2) - (windowSize.width / 2)
-        let finalY = screenOriginY + screenHeight - topPadding - contentSize.height - 8 - windowPadding
-        let finalFrame = NSRect(x: finalX, y: finalY, width: windowSize.width, height: windowSize.height)
-        
-        let startY = screenOriginY + screenHeight - topPadding + 10 - windowPadding
-        let startFrame = NSRect(x: finalX, y: startY, width: windowSize.width, height: windowSize.height)
-        
-        window.setFrame(startFrame, display: false)
-        window.alphaValue = 0.0
-        window.makeKeyAndOrderFront(nil)
-        
-        NSAnimationContext.runAnimationGroup({ context in
-            context.duration = 0.45
-            context.timingFunction = CAMediaTimingFunction(controlPoints: 0.34, 1.56, 0.64, 1.0)
-            
-            window.animator().setFrame(finalFrame, display: true)
-            window.animator().alphaValue = 1.0
-        }) { [weak self] in
-            self?.morphAnimationInProgress = false
-            self?.currentIslandState = .expanded
-        }
+
+        let x = screen.frame.origin.x + (screen.frame.width - size.width) / 2
+        // The island is top-anchored `notchWindowPadding` below the window top.
+        let topEdge = screen.frame.origin.y + screen.frame.height - topPadding - 8 + notchWindowPadding
+        let y = topEdge - size.height
+
+        window.setFrameOrigin(NSPoint(x: x, y: y))
     }
-    
-    func updateWindowFrame(for state: IslandState, animated: Bool = true) {
-        guard let window = window else { return }
-        
-        let mouseLocation = NSEvent.mouseLocation
-        guard let screen = NSScreen.screens.first(where: { NSMouseInRect(mouseLocation, $0.frame, false) }) ?? NSScreen.main ?? NSScreen.screens.first else { return }
-        
-        let screenWidth = screen.frame.width
-        let screenHeight = screen.frame.height
-        let screenOriginX = screen.frame.origin.x
-        let screenOriginY = screen.frame.origin.y
-        let safeAreaTop = screen.safeAreaInsets.top
-        let topPadding = safeAreaTop > 0 ? safeAreaTop : 32
-        
-        let contentSize = MorphingGeometry.calculateFrame(for: state)
-        let windowSize = CGSize(width: contentSize.width + (windowPadding * 2), height: contentSize.height + (windowPadding * 2))
-        
-        let newX = screenOriginX + (screenWidth / 2) - (windowSize.width / 2)
-        let newY = screenOriginY + screenHeight - topPadding - contentSize.height - 8 - windowPadding
-        let newFrame = NSRect(x: newX, y: newY, width: windowSize.width, height: windowSize.height)
-        
-        if animated {
-            NSAnimationContext.runAnimationGroup { context in
-                context.duration = 0.5
-                context.timingFunction = CAMediaTimingFunction(controlPoints: 0.34, 1.56, 0.64, 1.0)
-                window.animator().setFrame(newFrame, display: true)
-            }
-        } else {
-            window.setFrame(newFrame, display: true)
-        }
-        
-        currentIslandState = state
-    }
-    
-    /// Handles critical expansion for urgency states (T-minus 1 minute or 10 seconds)
-    func handleCriticalExpansion() {
-        guard currentIslandState == .collapsed || currentIslandState == .collapsing else { return }
-        
-        // Use spring animation for critical expansion
-        updateWindowFrame(for: .critical, animated: true)
-        
-        // Add urgency visual feedback
-        if let window = window {
-            // Subtle shake effect for critical state
-            let originalFrame = window.frame
-            
-            NSAnimationContext.runAnimationGroup { context in
-                context.duration = 0.1
-                context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-                
-                // Small shake offset
-                let shakeFrame = NSRect(
-                    x: originalFrame.minX + 2,
-                    y: originalFrame.minY,
-                    width: originalFrame.width,
-                    height: originalFrame.height
-                )
-                window.animator().setFrame(shakeFrame, display: true)
-            } completionHandler: {
-                NSAnimationContext.runAnimationGroup { context in
-                    context.duration = 0.1
-                    context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-                    
-                    window.animator().setFrame(originalFrame, display: true)
-                }
-            }
-        }
-    }
-    
+
     func updateScreen(_ screen: NSScreen) {
-        let contentSize = MorphingGeometry.calculateFrame(for: currentIslandState)
-        let windowSize = CGSize(width: contentSize.width + (windowPadding * 2), height: contentSize.height + (windowPadding * 2))
-        
-        let screenWidth = screen.frame.width
-        let screenHeight = screen.frame.height
-        let safeAreaTop = screen.safeAreaInsets.top
-        let topPadding = safeAreaTop > 0 ? safeAreaTop : 32
-        
-        let newX = screen.frame.origin.x + (screenWidth - windowSize.width) / 2
-        let newY = screen.frame.origin.y + screenHeight - topPadding - contentSize.height - 8 - windowPadding
-        let newFrame = NSRect(x: newX, y: newY, width: windowSize.width, height: windowSize.height)
-        
-        window?.setFrame(newFrame, display: true)
+        reposition(to: screen)
     }
-    
-    func hide() {
-        guard let window = window, let screen = NSScreen.main else { return }
-        guard !morphAnimationInProgress else { return }
-        
-        morphAnimationInProgress = true
-        
-        let screenHeight = screen.frame.height
-        let safeAreaTop = screen.safeAreaInsets.top
-        let topPadding = safeAreaTop > 0 ? safeAreaTop : 32
-        let currentFrame = window.frame
-        
-        let targetY = screenHeight - topPadding + 10 - windowPadding
-        let targetFrame = NSRect(x: currentFrame.minX, y: targetY, width: currentFrame.width, height: currentFrame.height)
-        
-        NSAnimationContext.runAnimationGroup({ context in
-            context.duration = 0.3
-            context.timingFunction = CAMediaTimingFunction(controlPoints: 0.4, 0.0, 1.0, 1.0)
-            window.animator().setFrame(targetFrame, display: true)
-            window.animator().alphaValue = 0
-        }) { [weak self] in
-            window.orderOut(nil)
-            self?.morphAnimationInProgress = false
-            self?.currentIslandState = .collapsed
+
+    // MARK: - Presentation
+
+    /// Orders the panel in. The slide-down and fade are animated by SwiftUI
+    /// against the view model's `isIslandVisible`, not by moving the window.
+    /// - Parameter activating: bring the app forward and make the panel key.
+    ///   Required for controls that open their own popup (the action menu, the
+    ///   duration pickers), which do not respond while the app is inactive.
+    ///   Passive appearances — the countdown pill, periodic peeks, the urgency
+    ///   pop-out — pass `false` so the island never steals focus from whatever
+    ///   the user is actually doing.
+    func present(activating: Bool = false) {
+        guard let window = window else { return }
+
+        if !isPresented {
+            reposition()
+        }
+
+        isPresented = true
+
+        if activating {
+            window.makeKeyAndOrderFront(nil)
+            NSApp.activate(ignoringOtherApps: true)
+        } else {
+            window.orderFrontRegardless()
+        }
+    }
+
+    /// Orders the panel out once SwiftUI has finished animating it away.
+    func dismiss() {
+        isPresented = false
+        window?.orderOut(nil)
+    }
+}
+
+// MARK: - Hosting View
+
+/// Hosting view that only accepts clicks on the island itself, so the
+/// transparent margin around it stays click-through.
+class PassThroughHostingView<Content: View>: NSHostingView<Content> {
+
+    /// Updated from SwiftUI as the island morphs.
+    var hitRegion = IslandHitRegion()
+
+    required init(rootView: Content) {
+        super.init(rootView: rootView)
+        self.sizingOptions = []
+    }
+
+    @MainActor required dynamic init?(coder aDecoder: NSCoder) {
+        super.init(coder: aDecoder)
+        self.sizingOptions = []
+    }
+
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        let region = hitRegion.rect
+        guard !region.isEmpty else { return nil }
+
+        // `point` arrives in the *superview's* coordinate system, and the
+        // borderless frame view is not flipped while this view is — so it must
+        // be converted before being compared with the region SwiftUI reported.
+        // Testing the raw point rejected every click on the island.
+        let local = convert(point, from: superview)
+        let y = isFlipped ? local.y : bounds.height - local.y
+
+        guard region.insetBy(dx: -2, dy: -2).contains(CGPoint(x: local.x, y: y)) else { return nil }
+        return super.hitTest(point)
+    }
+
+    // NOTE: do not override `needsUpdateConstraints` / `updateConstraints` to
+    // suppress re-entrant invalidation. Doing so leaves AppKit's constraint
+    // bookkeeping inconsistent and the NSException it raises crashes the
+    // process rather than being caught. The feedback loop is prevented by
+    // holding the window size constant — see NotchWindowController.
+}
+
+// MARK: - Root View
+
+private struct IslandFramePreferenceKey: PreferenceKey {
+    static var defaultValue: CGRect = .zero
+    static func reduce(value: inout CGRect, nextValue: () -> CGRect) {
+        // Both the island and the toast report, so the interactive area is
+        // their union. Reduction restarts from `defaultValue` on every layout
+        // pass, so a dismissed toast shrinks the region back automatically.
+        let next = nextValue()
+        guard !next.isEmpty else { return }
+        value = value.isEmpty ? next : value.union(next)
+    }
+}
+
+extension View {
+    /// Reports this view's live frame up to the hosting view for hit testing.
+    ///
+    /// Attached outside the animation modifiers, so the region tracks the
+    /// island through the morph rather than jumping to its final size.
+    func reportsIslandHitRegion() -> some View {
+        background(
+            GeometryReader { proxy in
+                Color.clear.preference(
+                    key: IslandFramePreferenceKey.self,
+                    value: proxy.frame(in: .named(NotchCoordinateSpace.root))
+                )
+            }
+        )
+    }
+}
+
+/// Fixed-size container: the island is top-anchored and centred, free to morph
+/// within the box without ever changing the window's own dimensions.
+private struct NotchRootView: View {
+    let island: AnyView
+    let hitRegion: IslandHitRegion
+    let size: CGSize
+
+    var body: some View {
+        VStack(spacing: 8) {
+            island
+            // Below the island, not stacked on top of it — as an overlay the
+            // toast covered the header row's controls.
+            ToastContainerView()
+            Spacer(minLength: 0)
+        }
+        .padding(notchWindowPadding)
+        .frame(width: size.width, height: size.height)
+        .coordinateSpace(name: NotchCoordinateSpace.root)
+        .onPreferenceChange(IslandFramePreferenceKey.self) { rect in
+            hitRegion.rect = rect
         }
     }
 }
 
+// MARK: - Panel
+
 class NotchPanel: NSPanel {
+
+    /// Big enough for the largest island state plus the transparent margin.
+    /// Constant for the lifetime of the window — nothing may resize it.
+    static var contentSize: CGSize {
+        let largest = MorphingGeometry.largestStateSize
+        // Slack on top of the largest configured state: the island sizes itself
+        // to its content, which may exceed the nominal figure. A larger
+        // transparent box costs nothing now that hit testing is exact.
+        return CGSize(
+            width: largest.width + notchWindowPadding * 2 + 40,
+            height: largest.height + notchWindowPadding * 2 + 160
+        )
+    }
+
     init(rootView: AnyView) {
-        // Wrap root view with toast overlay
-        let contentWithToast = ZStack {
-            rootView
-            ToastContainerView()
-        }
-        
-        let hostingController = NSHostingController(rootView: contentWithToast.padding(80)) // Add padding in SwiftUI too
-        
+        let size = NotchPanel.contentSize
+        let hitRegion = IslandHitRegion()
+
+        let root = NotchRootView(island: rootView, hitRegion: hitRegion, size: size)
+        let hostingView = PassThroughHostingView(rootView: root)
+        hostingView.hitRegion = hitRegion
+
         super.init(
-            contentRect: NSRect(x: 0, y: 0, width: 1200, height: 600), // Larger base size for content
+            contentRect: NSRect(origin: .zero, size: size),
             styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
             defer: false
         )
-        
-        self.contentViewController = hostingController
+
+        self.contentView = hostingView
         self.isFloatingPanel = true
-        self.level = .floating
-        self.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
-        
+        self.level = .statusBar
+        self.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
+
         self.backgroundColor = .clear
         self.hasShadow = false
         self.isOpaque = false
+        self.isReleasedWhenClosed = false
+        self.becomesKeyOnlyIfNeeded = true
+        self.hidesOnDeactivate = false
+        self.animationBehavior = .none
     }
-    
-    override var canBecomeKey: Bool {
-        return true
-    }
-    
-    override var canBecomeMain: Bool {
-        return false
-    }
+
+    override var canBecomeKey: Bool { true }
+    override var canBecomeMain: Bool { false }
 }

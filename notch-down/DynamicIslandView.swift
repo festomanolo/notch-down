@@ -7,164 +7,173 @@
 //
 
 import SwiftUI
+import AppKit
 import Combine
 
-/// Main Dynamic Island interface component with modern design
+/// Main Dynamic Island interface component with modern design.
+///
+/// This view owns *all* of the island's motion — morphing between states, the
+/// slide-in from the notch, and the urgency nudge. The window it lives in is a
+/// fixed-size transparent box that never animates, which is what keeps AppKit's
+/// layout engine out of the loop.
 struct DynamicIslandView: View {
     @ObservedObject var viewModel: TimerViewModel
-    
+
+    /// Horizontal offset for the urgency attention nudge.
+    @State private var nudgeOffset: CGFloat = 0
+
     var body: some View {
-        ZStack {
-            // Modern glassmorphism background
+        ZStack(alignment: .top) {
             ModernIslandBackground(
                 state: viewModel.islandState,
                 urgency: viewModel.urgencyLevel,
                 theme: viewModel.currentTheme
             )
-            
-            // Content layer with modern layout
+
+            // Swapped outright rather than cross-faded. An `.id` + `.transition`
+            // dissolve here inherits the island's morph animation and gets
+            // stuck part-way: it left the warning and critical labels stacked
+            // on top of each other, and could leave the whole content layer
+            // sitting at zero opacity. The size morph below is the motion that
+            // matters; a half-finished fade is worse than none.
             contentLayer
-                .opacity(contentOpacity)
-                .animation(.easeInOut(duration: 0.2), value: viewModel.islandState)
+                .frame(width: currentFrameSize.width)
         }
-        .frame(
-            width: currentFrameSize.width,
-            height: currentFrameSize.height
-        )
+        // An explicit, continuous size is what the morph spring interpolates.
+        .frame(width: currentFrameSize.width, height: currentFrameSize.height)
+        .animation(SpringAnimator.morphToExpanded(), value: currentFrameSize)
         .animation(SpringAnimator.morphToExpanded(), value: viewModel.islandState)
+        // Entrance: drops out of the notch and settles.
+        .scaleEffect(viewModel.isIslandVisible ? 1.0 : 0.86, anchor: .top)
+        .offset(x: nudgeOffset, y: viewModel.isIslandVisible ? 0 : -18)
+        .opacity(viewModel.isIslandVisible ? 1 : 0)
+        .onChange(of: viewModel.attentionNudge) {
+            playAttentionNudge()
+        }
+        // Published last so the reported rect matches what is actually drawn.
+        .reportsIslandHitRegion()
     }
-    
+
+    /// Quick sideways flick, then settle. Replaces the old window-frame shake.
+    private func playAttentionNudge() {
+        withAnimation(.easeOut(duration: 0.08)) { nudgeOffset = 6 }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) {
+            withAnimation(.spring(response: 0.34, dampingFraction: 0.38)) { nudgeOffset = 0 }
+        }
+    }
+
+
     // MARK: - Content Layer
-    
+
     @ViewBuilder
     private var contentLayer: some View {
         switch viewModel.islandState {
         case .collapsed, .collapsing:
             collapsedContent
-            
+
         case .expanding:
             expandingContent
-            
+
         case .expanded, .critical:
             expandedContent
-            
+
         case .about:
             AboutView(viewModel: viewModel)
         }
     }
-    
+
     // MARK: - Collapsed State Content
-    
+
     private var collapsedContent: some View {
         HStack(spacing: 8) {
             if viewModel.isActive {
                 CompactCountdownDisplay(viewModel: viewModel)
             } else {
-                // Show tappable countdown starter
                 TappableCountdownStarter(viewModel: viewModel)
             }
         }
-        .padding(.horizontal, 24)
-        .padding(.vertical, 8)
+        .padding(.horizontal, 20)
+        .padding(.vertical, 6)
         .frame(maxWidth: .infinity)
-        .contentShape(Rectangle()) // Make entire area gesture-sensitive
-        .gesture(
-            DragGesture(minimumDistance: 30)
-                .onEnded { value in
-                    if value.translation.width > 50 {
-                        // Swipe Right -> Snooze
-                        viewModel.snoozeTimer()
-                    } else if value.translation.width < -50 {
-                        // Swipe Left -> Cancel
-                        viewModel.cancelTimer()
-                    }
-                }
-        )
-        .simultaneousGesture(
-            LongPressGesture(minimumDuration: 0.8)
-                .onEnded { _ in
-                    // Long Press -> Toggle Mode
-                    viewModel.togglePrimaryAction()
-                }
-        )
+        .contentShape(Rectangle())
+        // Swipe/long-press shortcuts only make sense while a timer is running,
+        // and they must never be attached when the pill hosts a button — a
+        // DragGesture over the whole pill swallowed the button's tap, which is
+        // why the collapsed island appeared unresponsive.
+        .modifier(PillGestures(viewModel: viewModel, enabled: viewModel.isActive))
+        .onTapGesture {
+            // The running pill is a label, not a button; without this a click
+            // on the countdown does nothing at all.
+            if viewModel.isActive { viewModel.expandIsland() }
+        }
     }
-    
+
     // MARK: - Expanding State Content
-    
+
     private var expandingContent: some View {
         HStack {
             Text("Power Timer")
                 .font(.system(size: 12.5, weight: .semibold, design: .rounded))
                 .foregroundColor(viewModel.currentTheme.textColor)
-            
+
             Spacer()
-            
+
             if viewModel.isActive {
                 CompactCountdownDisplay(viewModel: viewModel)
             } else {
-                CurrentTimeDisplay()
+                CurrentTimeDisplay(theme: viewModel.currentTheme)
             }
         }
         .padding(.horizontal, 24)
         .padding(.vertical, 12)
     }
-    
+
     // MARK: - Expanded State Content
-    
+
     private var expandedContent: some View {
-        VStack(spacing: 16) {
-            // Permission warning banner (if needed)
+        VStack(spacing: 14) {
             if viewModel.showPermissionWarning {
                 PermissionWarningBanner(viewModel: viewModel)
             }
-            
-            // Top row: Controls, time display, and minimize button
-            HStack {
-                // Power dropdown
+
+            // Header row: action picker, live clock, appearance + window controls
+            HStack(spacing: 10) {
                 PowerDropdown(viewModel: viewModel)
-                
-                Spacer()
-                
-                // Current time or timer display
-                if viewModel.isActive {
-                    // Show timer countdown
-                    CompactCountdownDisplay(viewModel: viewModel)
-                } else {
-                    // Show current time
-                    CurrentTimeDisplay()
+
+                Spacer(minLength: 8)
+
+                if !viewModel.isActive {
+                    CurrentTimeDisplay(theme: viewModel.currentTheme)
+                    Spacer(minLength: 8)
                 }
-                
-                Spacer()
-                
-                // Theme toggle
+
                 ThemeToggle(viewModel: viewModel)
-                
-                HStack(spacing: 8) {
-                    // About button (Exclamation mark)
-                    AboutCircleButton {
-                        viewModel.showAboutPage()
-                    }
-                    
-                    // Minimize button
-                    MinimizeButton {
-                        viewModel.collapseIsland()
-                    }
+
+                AboutCircleButton(theme: viewModel.currentTheme) {
+                    viewModel.showAboutPage()
+                }
+
+                MinimizeButton(theme: viewModel.currentTheme) {
+                    viewModel.collapseIsland()
                 }
             }
-            
+
             // Main content area
             if viewModel.isShowingSuggestion {
                 suggestionView
             } else if viewModel.isActive {
-                ActiveTimerView(viewModel: viewModel)
+                // The full slot-machine roller, not a plain label. This view
+                // exists in the project but was never actually rendered, which
+                // is why no rolling seconds animation ever appeared.
+                CountdownDisplay(viewModel: viewModel)
             } else {
                 TimerSelectionView(viewModel: viewModel)
             }
         }
-        .padding(.horizontal, 24)
-        .padding(.vertical, 16)
+        .padding(.horizontal, 22)
+        .padding(.vertical, 14)
     }
-    
+
     private var suggestionView: some View {
         VStack(spacing: 12) {
             HStack(spacing: 12) {
@@ -172,7 +181,7 @@ struct DynamicIslandView: View {
                     .font(.system(size: 20))
                     .foregroundColor(.orange)
                     .symbolEffect(.pulse, options: .repeating)
-                
+
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Low Battery Detected")
                         .font(.system(size: 14, weight: .bold, design: .rounded))
@@ -181,42 +190,73 @@ struct DynamicIslandView: View {
                         .font(.system(size: 11, weight: .medium, design: .rounded))
                         .foregroundColor(viewModel.currentTheme.secondaryTextColor)
                 }
-                
+
                 Spacer()
             }
             .padding(12)
-            .background(Color.orange.opacity(0.1))
+            .background(Color.orange.opacity(0.12))
             .cornerRadius(12)
-            
+
             HStack(spacing: 8) {
                 ModernButton(title: "Dismiss", color: .gray, isSelected: false) {
                     viewModel.dismissSuggestion()
                 }
-                
+
                 ModernButton(title: "Shutdown in 5m", color: .green, isSelected: true) {
-                    viewModel.isShowingSuggestion = false
+                    viewModel.dismissSuggestion()
                     viewModel.startTimer(minutes: 5, action: .shutdown)
                 }
             }
         }
     }
-    
+
     // MARK: - Helper Properties
-    
+
+    /// Per-state geometry, sized for what the island is currently showing.
     private var currentFrameSize: CGSize {
-        MorphingGeometry.calculateFrame(for: viewModel.islandState)
+        MorphingGeometry.calculateFrame(
+            for: viewModel.islandState,
+            content: MorphingGeometry.ContentContext(
+                isTimerActive: viewModel.isActive,
+                isShowingSuggestion: viewModel.isShowingSuggestion,
+                isShowingCustomInput: viewModel.showingCustomInput,
+                showsPermissionWarning: viewModel.showPermissionWarning
+            )
+        )
     }
-    
-    private var contentOpacity: Double {
-        switch viewModel.islandState {
-        case .collapsed:
-            return 1.0
-        case .expanding:
-            return 0.7
-        case .expanded, .critical, .about:
-            return 1.0
-        case .collapsing:
-            return 0.5
+}
+
+// MARK: - Pill Gestures
+
+/// Swipe-right to snooze, swipe-left to cancel, long-press to toggle action.
+///
+/// Applied conditionally: when no timer is running the pill hosts a button, and
+/// a competing DragGesture would eat its taps.
+private struct PillGestures: ViewModifier {
+    @ObservedObject var viewModel: TimerViewModel
+    let enabled: Bool
+
+    func body(content: Content) -> some View {
+        if enabled {
+            content
+                .gesture(
+                    DragGesture(minimumDistance: 30)
+                        .onEnded { value in
+                            if value.translation.width > 50 {
+                                viewModel.snoozeTimer()
+                            } else if value.translation.width < -50 {
+                                viewModel.cancelTimer()
+                            }
+                        }
+                )
+                .simultaneousGesture(
+                    LongPressGesture(minimumDuration: 0.8)
+                        .onEnded { _ in
+                            viewModel.togglePrimaryAction()
+                        }
+                )
+        } else {
+            content
         }
     }
 }
@@ -227,57 +267,62 @@ struct ModernIslandBackground: View {
     let state: IslandState
     let urgency: UrgencyLevel
     let theme: AppTheme
-    
+
     var body: some View {
         ZStack {
-            // Base shadow layer (multi-layered for depth)
+            // Drop shadow layer
             RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                 .fill(Color.black.opacity(0.1))
-                .shadow(color: .black.opacity(0.4), radius: 30, x: 0, y: 15)
-                .shadow(color: .black.opacity(0.2), radius: 10, x: 0, y: 5)
-            
-            // Main background with gradient
+                .shadow(color: .black.opacity(theme == .dark ? 0.4 : 0.22), radius: 30, x: 0, y: 15)
+                .shadow(color: .black.opacity(theme == .dark ? 0.2 : 0.12), radius: 10, x: 0, y: 5)
+
+            // Frosted base. The material sits *under* the theme tint so light
+            // mode stays genuinely light — previously the material was layered
+            // on top of the white fill and greyed the whole panel out, which is
+            // what made light-mode text so hard to read.
+            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                .fill(.ultraThinMaterial)
+
             RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                 .fill(
                     LinearGradient(
                         colors: [
                             theme.backgroundColor,
-                            theme.backgroundColor.opacity(0.95),
-                            theme.backgroundColor.opacity(0.9)
+                            theme.backgroundColor.opacity(0.97),
+                            theme.backgroundColor.opacity(0.93)
                         ],
                         startPoint: .topLeading,
                         endPoint: .bottomTrailing
                     )
                 )
-            
-            // Material layer for glass effect
+
+            // Subtle specular sheen
             RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                .fill(.ultraThinMaterial)
-                .overlay(
-                    // Subtle light reflection
+                .fill(
                     LinearGradient(
-                        colors: [.white.opacity(0.1), .clear, .black.opacity(0.05)],
+                        colors: theme == .dark
+                            ? [.white.opacity(0.10), .clear, .black.opacity(0.05)]
+                            : [.white.opacity(0.55), .clear, .black.opacity(0.03)],
                         startPoint: .topLeading,
                         endPoint: .bottomTrailing
                     )
-                    .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
                 )
-            
+
             // Border stroke
             RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                 .stroke(
                     LinearGradient(
                         colors: [
-                            theme.borderColor.opacity(0.5),
-                            theme.borderColor.opacity(0.2),
-                            theme.borderColor.opacity(0.1)
+                            theme.borderColor.opacity(0.7),
+                            theme.borderColor.opacity(0.3),
+                            theme.borderColor.opacity(0.15)
                         ],
                         startPoint: .topLeading,
                         endPoint: .bottomTrailing
                     ),
                     lineWidth: 1
                 )
-            
+
             // Urgency glow effect
             if urgency != .normal {
                 RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
@@ -287,39 +332,24 @@ struct ModernIslandBackground: View {
             }
         }
     }
-    
+
     private var cornerRadius: Double {
-        switch state {
-        case .collapsed, .collapsing:
-            return 16
-        case .expanding:
-            return 18
-        case .expanded, .critical:
-            return 20
-        case .about:
-            return 24
-        }
+        MorphingGeometry.cornerRadius(for: state)
     }
-    
+
     private var urgencyGlowColor: Color {
         switch urgency {
-        case .normal:
-            return .clear
-        case .warning:
-            return .orange
-        case .critical:
-            return .red
+        case .normal:   return .clear
+        case .warning:  return .orange
+        case .critical: return .red
         }
     }
-    
+
     private var urgencyGlowOpacity: Double {
         switch urgency {
-        case .normal:
-            return 0
-        case .warning:
-            return 0.4
-        case .critical:
-            return 0.7
+        case .normal:   return 0
+        case .warning:  return 0.4
+        case .critical: return 0.7
         }
     }
 }
@@ -328,43 +358,81 @@ struct ModernIslandBackground: View {
 
 struct PowerDropdown: View {
     @ObservedObject var viewModel: TimerViewModel
-    @State private var isExpanded = false
-    
+
     var body: some View {
-        Menu {
-            Button(action: {
-                viewModel.currentPowerAction = .shutdown
-            }) {
-                Label("Shutdown", systemImage: "power")
+        Group {
+            // While a countdown is running the action is fixed, so show a plain
+            // chip rather than a menu dimmed to 50% — which just looked broken.
+            if viewModel.isActive {
+                label(for: viewModel.scheduledAction ?? viewModel.currentPowerAction,
+                      showsChevron: false)
+            } else {
+                Menu {
+                    ForEach(PowerAction.allCases) { action in
+                        Button {
+                            viewModel.currentPowerAction = action
+                        } label: {
+                            Label(action.displayName, systemImage: action.iconName)
+                        }
+                    }
+                } label: {
+                    label(for: viewModel.currentPowerAction, showsChevron: true)
+                }
+                .menuStyle(BorderlessButtonMenuStyle())
+                .menuIndicator(.hidden)
+                .fixedSize()
             }
-            
-            Button(action: {
-                viewModel.currentPowerAction = .restart
-            }) {
-                Label("Restart", systemImage: "arrow.clockwise")
+        }
+        // The chip is applied *outside* the Menu. macOS strips background and
+        // padding from a Menu's label, so styling it inline left this control
+        // looking unstyled next to the theme toggle beside it.
+        .padding(.horizontal, 12)
+        .padding(.vertical, 6)
+        .background(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(viewModel.currentTheme.secondaryBackground)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .stroke(viewModel.currentTheme.borderColor, lineWidth: 1)
+                )
+        )
+        .fixedSize()
+    }
+
+    @ViewBuilder
+    private func label(for action: PowerAction, showsChevron: Bool) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: action.iconName)
+                .font(.system(size: 11, weight: .medium))
+
+            Text(action.displayName)
+                .font(.system(size: 12, weight: .medium, design: .rounded))
+                .fixedSize()
+
+            if showsChevron {
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 9, weight: .semibold))
             }
-            
-            Button(action: {
-                viewModel.currentPowerAction = .sleep
-            }) {
-                Label("Sleep", systemImage: "moon.fill")
-            }
-            
-            Button(action: {
-                viewModel.currentPowerAction = .logout
-            }) {
-                Label("Log Out", systemImage: "rectangle.portrait.and.arrow.right")
-            }
+        }
+        .foregroundColor(viewModel.currentTheme.textColor)
+    }
+}
+
+// MARK: - Theme Toggle Component
+
+struct ThemeToggle: View {
+    @ObservedObject var viewModel: TimerViewModel
+
+    var body: some View {
+        Button {
+            viewModel.toggleTheme()
         } label: {
             HStack(spacing: 6) {
-                Image(systemName: viewModel.currentPowerAction.iconName)
+                Image(systemName: viewModel.currentTheme == .dark ? "moon.fill" : "sun.max.fill")
                     .font(.system(size: 11, weight: .medium))
-                
-                Text(viewModel.currentPowerAction.displayName)
+                Text(viewModel.currentTheme == .dark ? "Dark" : "Light")
                     .font(.system(size: 12, weight: .medium, design: .rounded))
-                
-                Image(systemName: "chevron.down")
-                    .font(.system(size: 10, weight: .medium))
+                    .fixedSize()
             }
             .foregroundColor(viewModel.currentTheme.textColor)
             .padding(.horizontal, 12)
@@ -378,38 +446,8 @@ struct PowerDropdown: View {
                     )
             )
         }
-        .menuStyle(BorderlessButtonMenuStyle())
-    }
-}
-
-// MARK: - Theme Toggle Component
-
-struct ThemeToggle: View {
-    @ObservedObject var viewModel: TimerViewModel
-    
-    var body: some View {
-        Button {
-            viewModel.toggleTheme()
-        } label: {
-            HStack(spacing: 6) {
-                Image(systemName: viewModel.currentTheme == .dark ? "moon.fill" : "sun.max.fill")
-                    .font(.system(size: 11, weight: .medium))
-                Text(viewModel.currentTheme == .dark ? "Dark" : "Light")
-                    .font(.system(size: 12, weight: .medium, design: .rounded))
-            }
-            .foregroundColor(viewModel.currentTheme.textColor)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 6)
-            .background(
-                RoundedRectangle(cornerRadius: 16)
-                    .fill(viewModel.currentTheme.secondaryBackground)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 16)
-                            .stroke(viewModel.currentTheme.borderColor, lineWidth: 1)
-                    )
-            )
-        }
         .buttonStyle(PlainButtonStyle())
+        .help("Switch between light and dark appearance")
     }
 }
 
@@ -417,30 +455,19 @@ struct ThemeToggle: View {
 
 struct TimerSelectionView: View {
     @ObservedObject var viewModel: TimerViewModel
-    
-    private let timerOptions: [(TimeOption, String, Color)] = [
-        (.custom, "Custom", .blue),
-        (.fiveMinutes, "5m", .green),
-        (.tenMinutes, "10m", .yellow),
-        (.thirtyMinutes, "30m", .orange),
-        (.custom, "1h", .purple) // Using .custom as a placeholder for 60m if needed, or I'll just use the minutes below
-    ]
-    
+
     var body: some View {
         VStack(spacing: 12) {
             if viewModel.showingCustomInput {
-                // Custom time input UI
                 CustomTimeInputView(viewModel: viewModel)
             } else {
-                HStack(spacing: 8) {
-                    // Presets group on the left
+                VStack(spacing: 10) {
                     HStack(spacing: 6) {
                         presetButton(title: "5m", minutes: 5, color: .green)
                         presetButton(title: "10m", minutes: 10, color: .yellow)
                         presetButton(title: "30m", minutes: 30, color: .orange)
                         presetButton(title: "1h", minutes: 60, color: .purple)
-                        
-                        // Custom toggle
+
                         ModernButton(
                             title: "Custom",
                             color: .blue,
@@ -451,34 +478,42 @@ struct TimerSelectionView: View {
                             }
                         }
                     }
-                    
-                    Spacer()
-                    
-                    // Main Start Button for presets on the right
-                    Button(action: {
-                        if let mins = viewModel.selectedPresetMinutes {
-                            viewModel.startTimer(minutes: mins, action: viewModel.currentPowerAction)
+
+                    Button {
+                        guard let mins = viewModel.selectedPresetMinutes else { return }
+                        viewModel.startTimer(minutes: mins, action: viewModel.currentPowerAction)
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: viewModel.currentPowerAction.iconName)
+                                .font(.system(size: 11, weight: .bold))
+                            Text(startButtonTitle)
+                                .font(.system(size: 12.5, weight: .bold, design: .rounded))
                         }
-                    }) {
-                        Text("Start Timer")
-                            .font(.system(size: 12.5, weight: .bold, design: .rounded))
-                            .foregroundColor(.white)
-                            .lineLimit(1)
-                            .fixedSize(horizontal: true, vertical: false)
-                            .padding(.horizontal, 14)
-                            .padding(.vertical, 8)
-                            .background(
-                                Capsule()
-                                    .fill(LinearGradient(colors: [.green, .green.opacity(0.8)], startPoint: .top, endPoint: .bottom))
-                                    .shadow(color: .green.opacity(0.3), radius: 8, x: 0, y: 4)
-                            )
+                        .foregroundColor(.white)
+                        .lineLimit(1)
+                        .padding(.horizontal, 18)
+                        .padding(.vertical, 9)
+                        .background(
+                            Capsule()
+                                .fill(LinearGradient(colors: [.green, .green.opacity(0.82)],
+                                                     startPoint: .top, endPoint: .bottom))
+                                .shadow(color: .green.opacity(0.35), radius: 8, x: 0, y: 4)
+                        )
                     }
                     .buttonStyle(PlainButtonStyle())
+                    .disabled(viewModel.selectedPresetMinutes == nil)
+                    .opacity(viewModel.selectedPresetMinutes == nil ? 0.5 : 1)
                 }
             }
         }
     }
-    
+
+    private var startButtonTitle: String {
+        guard let mins = viewModel.selectedPresetMinutes else { return "Start Timer" }
+        let label = mins >= 60 ? "\(Int(mins / 60))h" : "\(Int(mins))m"
+        return "\(viewModel.currentPowerAction.displayName) in \(label)"
+    }
+
     @ViewBuilder
     private func presetButton(title: String, minutes: Double, color: Color) -> some View {
         ModernButton(
@@ -486,7 +521,7 @@ struct TimerSelectionView: View {
             color: color,
             isSelected: viewModel.selectedPresetMinutes == minutes && !viewModel.showingCustomInput
         ) {
-            withAnimation(.spring(response: 0.4, dampingFraction: 0.7)) {
+            withAnimation(SpringAnimator.buttonSelection()) {
                 viewModel.selectedPresetMinutes = minutes
                 viewModel.showingCustomInput = false
             }
@@ -494,120 +529,75 @@ struct TimerSelectionView: View {
     }
 }
 
-// MARK: - Active Timer View
-
-struct ActiveTimerView: View {
-    @ObservedObject var viewModel: TimerViewModel
-    
-    var body: some View {
-        VStack(spacing: 12) {
-            // Large countdown display
-            VStack(spacing: 4) {
-                Text("Time Remaining")
-                    .font(.system(size: 12, weight: .medium, design: .rounded))
-                    .foregroundColor(viewModel.currentTheme.secondaryTextColor)
-                
-                Text(viewModel.timeString)
-                    .font(.system(size: 28, weight: .bold, design: .monospaced))
-                    .foregroundColor(urgencyColor)
-                    .contentTransition(.numericText(countsDown: true))
-                    .animation(.spring(response: 0.3, dampingFraction: 0.8), value: viewModel.timeRemaining)
-            }
-            .padding(.vertical, 8)
-            .frame(maxWidth: .infinity)
-            .background(
-                RoundedRectangle(cornerRadius: 16)
-                    .fill(urgencyColor.opacity(0.08))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 16)
-                            .stroke(urgencyColor.opacity(0.2), lineWidth: 1)
-                    )
-            )
-            
-            // Cancel button
-            ModernButton(
-                title: "Cancel Timer",
-                color: .red,
-                isSelected: false
-            ) {
-                viewModel.cancelTimer()
-            }
-        }
-    }
-    
-    private var urgencyColor: Color {
-        switch viewModel.urgencyLevel {
-        case .normal:
-            return viewModel.currentTheme.accentBlue
-        case .warning:
-            return viewModel.currentTheme.accentOrange
-        case .critical:
-            return .red
-        }
-    }
-}
-
 // MARK: - Current Time Display Component
 
 struct CurrentTimeDisplay: View {
+    let theme: AppTheme
+
     @State private var currentTime = Date()
-    
-    let timer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
-    
+
+    private let timer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
+
+    private static let formatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.timeStyle = .short
+        return formatter
+    }()
+
     var body: some View {
         HStack(spacing: 6) {
             Image(systemName: "clock")
                 .font(.system(size: 12, weight: .medium))
-                .foregroundColor(.blue)
-            
-            Text(timeString)
-                .font(.system(size: 13, weight: .semibold, design: .monospaced))
-                .foregroundColor(.blue)
+
+            Text(Self.formatter.string(from: currentTime))
+                .font(.system(size: 13, weight: .semibold, design: .rounded).monospacedDigit())
+                .fixedSize()
         }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 4)
+        .foregroundColor(theme.accentBlue)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 5)
         .background(
-            RoundedRectangle(cornerRadius: 12)
-                .fill(Color.blue.opacity(0.1))
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(Color.blue.opacity(theme == .dark ? 0.14 : 0.10))
                 .overlay(
-                    RoundedRectangle(cornerRadius: 12)
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
                         .stroke(Color.blue.opacity(0.3), lineWidth: 1)
                 )
         )
-        .onReceive(timer) { input in
-            currentTime = input
-        }
-    }
-    
-    private var timeString: String {
-        let formatter = DateFormatter()
-        formatter.timeStyle = .short
-        return formatter.string(from: currentTime)
+        .onReceive(timer) { currentTime = $0 }
     }
 }
 
 // MARK: - Tappable Countdown Starter
 
+/// The idle pill. Tapping opens the full interface.
+///
+/// It used to start a five-minute shutdown on a single click with no
+/// confirmation and no way to see what it was about to do — one stray click on
+/// the notch and the Mac was on its way down.
 struct TappableCountdownStarter: View {
     @ObservedObject var viewModel: TimerViewModel
-    @State private var displayTime: TimeInterval = 300 // Default 5 minutes
     @State private var isHovered = false
-    
+
     var body: some View {
-        Button(action: {
-            // Start countdown immediately when tapped
-            viewModel.startTimer(minutes: displayTime / 60, action: viewModel.currentPowerAction)
-        }) {
+        Button {
+            viewModel.expandIsland()
+        } label: {
             HStack(spacing: 6) {
                 Image(systemName: viewModel.currentPowerAction.iconName)
                     .font(.system(size: 12, weight: .medium))
-                    .foregroundColor(viewModel.currentPowerAction == .shutdown ? viewModel.currentTheme.accentBlue : .purple)
-                
-                Text(formatTime(displayTime))
-                    .font(.system(size: 13, weight: .semibold, design: .monospaced))
+                    .foregroundColor(viewModel.currentTheme.accentBlue)
+
+                Text("Schedule \(viewModel.currentPowerAction.displayName)")
+                    .font(.system(size: 12, weight: .semibold, design: .rounded))
                     .foregroundColor(viewModel.currentTheme.textColor)
+                    .fixedSize()
+
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 9, weight: .bold))
+                    .foregroundColor(viewModel.currentTheme.secondaryTextColor)
             }
-            .padding(.horizontal, 8)
+            .padding(.horizontal, 10)
             .padding(.vertical, 4)
             .background(
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
@@ -619,17 +609,9 @@ struct TappableCountdownStarter: View {
             )
         }
         .buttonStyle(PlainButtonStyle())
-        .scaleEffect(isHovered ? 1.05 : 1.0)
+        .scaleEffect(isHovered ? 1.04 : 1.0)
         .animation(.spring(response: 0.3, dampingFraction: 0.7), value: isHovered)
-        .onHover { hovering in
-            isHovered = hovering
-        }
-    }
-    
-    private func formatTime(_ seconds: TimeInterval) -> String {
-        let mins = Int(seconds) / 60
-        let secs = Int(seconds) % 60
-        return String(format: "%02d:%02d", mins, secs)
+        .onHover { isHovered = $0 }
     }
 }
 
@@ -637,125 +619,100 @@ struct TappableCountdownStarter: View {
 
 struct CustomTimeInputView: View {
     @ObservedObject var viewModel: TimerViewModel
+
     @State private var hours: Int = 0
     @State private var minutes: Int = 5
     @State private var seconds: Int = 0
-    @State private var selectedAction: PowerAction = .shutdown
-    
+
+    private var totalMinutes: Double {
+        Double(hours * 60 + minutes) + Double(seconds) / 60.0
+    }
+
     var body: some View {
-        VStack(spacing: 12) {
-            // Time input row
-            HStack(spacing: 16) {
-                // Hours picker
-                VStack(spacing: 4) {
-                    Text("Hours")
-                        .font(.system(size: 11, weight: .bold, design: .rounded))
-                        .foregroundColor(viewModel.currentTheme.secondaryTextColor)
-                    
-                    Picker("", selection: $hours) {
-                        ForEach(0..<24, id: \.self) { hour in
-                            Text("\(hour)").tag(hour)
-                        }
-                    }
-                    .pickerStyle(.menu)
-                    .labelsHidden()
-                    .frame(width: 65)
-                }
-                
-                // Minutes picker
-                VStack(spacing: 4) {
-                    Text("Minutes")
-                        .font(.system(size: 11, weight: .bold, design: .rounded))
-                        .foregroundColor(viewModel.currentTheme.secondaryTextColor)
-                    
-                    Picker("", selection: $minutes) {
-                        ForEach(0..<60, id: \.self) { minute in
-                            Text("\(minute)").tag(minute)
-                        }
-                    }
-                    .pickerStyle(.menu)
-                    .labelsHidden()
-                    .frame(width: 65)
-                }
-                
-                // Seconds picker
-                VStack(spacing: 4) {
-                    Text("Seconds")
-                        .font(.system(size: 11, weight: .bold, design: .rounded))
-                        .foregroundColor(viewModel.currentTheme.secondaryTextColor)
-                    
-                    Picker("", selection: $seconds) {
-                        ForEach(0..<60, id: \.self) { second in
-                            Text("\(second)").tag(second)
-                        }
-                    }
-                    .pickerStyle(.menu)
-                    .labelsHidden()
-                    .frame(width: 65)
-                }
+        VStack(spacing: 10) {
+            HStack(spacing: 14) {
+                picker(title: "Hours", selection: $hours, range: 0..<24)
+                picker(title: "Minutes", selection: $minutes, range: 0..<60)
+                picker(title: "Seconds", selection: $seconds, range: 0..<60)
             }
             .padding(.horizontal, 12)
-            .padding(.vertical, 10)
+            .padding(.vertical, 8)
             .background(
                 RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .fill(viewModel.currentTheme.secondaryBackground.opacity(0.5))
+                    .fill(viewModel.currentTheme.secondaryBackground.opacity(0.6))
                     .overlay(
                         RoundedRectangle(cornerRadius: 16, style: .continuous)
-                            .stroke(viewModel.currentTheme.borderColor.opacity(0.3), lineWidth: 1)
+                            .stroke(viewModel.currentTheme.borderColor.opacity(0.5), lineWidth: 1)
                     )
             )
-            
-            // Action selection row
+
             HStack(spacing: 8) {
-                // Action picker
-                Picker("Action", selection: $selectedAction) {
-                    Text("Shutdown").tag(PowerAction.shutdown)
-                    Text("Restart").tag(PowerAction.restart)
-                    Text("Sleep").tag(PowerAction.sleep)
-                    Text("Log Out").tag(PowerAction.logout)
+                // Drives the shared action rather than a private @State copy —
+                // the old local picker silently ignored (and disagreed with)
+                // the action chosen in the header dropdown.
+                Picker("Action", selection: $viewModel.currentPowerAction) {
+                    ForEach(PowerAction.allCases) { action in
+                        Text(action.displayName).tag(action)
+                    }
                 }
+                .labelsHidden()
                 .pickerStyle(.menu)
-                .frame(width: 145) // Slightly more width just in case
-                
-                Spacer()
-                
-                // Back button
-                Button(action: {
+                .frame(width: 130)
+
+                Spacer(minLength: 4)
+
+                Button {
                     withAnimation(.spring(response: 0.4, dampingFraction: 0.7)) {
                         viewModel.showingCustomInput = false
                     }
-                }) {
+                } label: {
                     Text("Back")
                         .font(.system(size: 12, weight: .medium, design: .rounded))
                         .foregroundColor(viewModel.currentTheme.secondaryTextColor)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 6)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 7)
                         .background(
                             RoundedRectangle(cornerRadius: 12, style: .continuous)
                                 .stroke(viewModel.currentTheme.borderColor, lineWidth: 1)
                         )
                 }
                 .buttonStyle(PlainButtonStyle())
-                
-                // Start button
-                Button(action: {
-                    let totalMinutes = Double(hours * 60 + minutes) + Double(seconds) / 60.0
-                    if totalMinutes > 0 {
-                        viewModel.startTimer(minutes: totalMinutes, action: selectedAction)
-                    }
-                }) {
+
+                Button {
+                    viewModel.startTimer(minutes: totalMinutes, action: viewModel.currentPowerAction)
+                } label: {
                     Text("Start Timer")
-                        .font(.system(size: 12, weight: .semibold, design: .rounded))
+                        .font(.system(size: 12, weight: .bold, design: .rounded))
                         .foregroundColor(.white)
                         .padding(.horizontal, 16)
-                        .padding(.vertical, 6)
+                        .padding(.vertical, 7)
                         .background(
                             RoundedRectangle(cornerRadius: 12, style: .continuous)
                                 .fill(Color.green)
                         )
                 }
                 .buttonStyle(PlainButtonStyle())
+                // A zero-length timer would fire instantly; block it rather
+                // than silently doing nothing on click.
+                .disabled(totalMinutes <= 0)
+                .opacity(totalMinutes <= 0 ? 0.5 : 1)
             }
+        }
+    }
+
+    @ViewBuilder
+    private func picker(title: String, selection: Binding<Int>, range: Range<Int>) -> some View {
+        VStack(spacing: 4) {
+            Text(title)
+                .font(.system(size: 10, weight: .bold, design: .rounded))
+                .foregroundColor(viewModel.currentTheme.secondaryTextColor)
+
+            Picker("", selection: selection) {
+                ForEach(range, id: \.self) { Text("\($0)").tag($0) }
+            }
+            .pickerStyle(.menu)
+            .labelsHidden()
+            .frame(width: 68)
         }
     }
 }
@@ -765,297 +722,266 @@ struct CustomTimeInputView: View {
 struct AboutView: View {
     @ObservedObject var viewModel: TimerViewModel
     @State private var haloRotation: Double = 0
-    
+
+    private var theme: AppTheme { viewModel.currentTheme }
+
     var body: some View {
-        VStack(spacing: 16) {
-            // Header with Back Button
+        VStack(spacing: 14) {
+            header
+
+            profileCard
+
+            VStack(spacing: 6) {
+                Toggle("Show Countdown in Menu Bar", isOn: $viewModel.showCountdownInMenuBar)
+                Toggle("Alert Sounds", isOn: $viewModel.soundAlertsEnabled)
+                Toggle("Start at Login", isOn: $viewModel.startAtLogin)
+                Toggle("Show Dock Icon", isOn: $viewModel.showInDock)
+            }
+            .toggleStyle(LiquidGlassToggleStyle(theme: theme))
+
+            if !viewModel.updateStatusMessage.isEmpty {
+                Text(viewModel.updateStatusMessage)
+                    .font(.system(size: 11, weight: .medium, design: .rounded))
+                    .foregroundColor(theme.secondaryTextColor)
+                    .transition(.opacity)
+            }
+
+            actionButtons
+        }
+        .padding(.horizontal, 22)
+        .padding(.vertical, 16)
+    }
+
+    private var header: some View {
+        ZStack {
+            Text("About")
+                .font(.system(size: 14, weight: .bold, design: .rounded))
+                .foregroundColor(theme.textColor)
+
             HStack {
                 Button {
-                    withAnimation(.spring(response: 0.4, dampingFraction: 0.82)) {
-                        viewModel.islandState = .expanded
-                    }
+                    viewModel.returnFromAboutPage()
                 } label: {
-                    HStack(spacing: 6) {
+                    HStack(spacing: 5) {
                         Image(systemName: "chevron.left")
-                            .font(.system(size: 14, weight: .bold))
+                            .font(.system(size: 13, weight: .bold))
                         Text("Back")
                             .font(.system(size: 13, weight: .bold, design: .rounded))
                     }
-                    .foregroundColor(viewModel.currentTheme.accentBlue)
-                    .contentShape(Rectangle()) // Explicit hit testing area
-                    .padding(.vertical, 8)
+                    .foregroundColor(theme.accentBlue)
+                    .padding(.vertical, 6)
                     .padding(.trailing, 16)
+                    .contentShape(Rectangle())
                 }
                 .buttonStyle(PlainButtonStyle())
-                
+
                 Spacer()
-                
-                Text("About")
-                    .font(.system(size: 14, weight: .bold, design: .rounded))
-                    .foregroundColor(viewModel.currentTheme.textColor)
-                
-                Spacer()
-                
-                // Spacer to balance the back button
-                Text("Back").opacity(0)
-            }
-            
-            HStack(spacing: 20) {
-                // Profile Photo with Godmode Halo
-                ZStack {
-                    // Glowing Halo
-                    Circle()
-                        .stroke(
-                            AngularGradient(
-                                colors: [.blue, .purple, .cyan, .blue],
-                                center: .center
-                            ),
-                            lineWidth: 3
-                        )
-                        .frame(width: 86, height: 86)
-                        .rotationEffect(.degrees(haloRotation))
-                        .blur(radius: 2)
-                        .onAppear {
-                            withAnimation(.linear(duration: 4).repeatForever(autoreverses: false)) {
-                                haloRotation = 360
-                            }
-                        }
-                    
-                    // Profile Image
-                    if let profileImage = loadProfileImage() {
-                        Image(nsImage: profileImage)
-                            .resizable()
-                            .aspectRatio(contentMode: .fill)
-                            .frame(width: 80, height: 80)
-                            .clipShape(Circle())
-                            .overlay(Circle().stroke(Color.white.opacity(0.2), lineWidth: 1))
-                            .shadow(color: .blue.opacity(0.3), radius: 10)
-                    } else {
-                        // Fallback icon if image not found
-                        Image(systemName: "person.circle.fill")
-                            .resizable()
-                            .aspectRatio(contentMode: .fit)
-                            .frame(width: 80, height: 80)
-                            .foregroundColor(.blue)
-                            .shadow(color: .blue.opacity(0.3), radius: 10)
-                    }
-                }
-                
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("festomanolo")
-                        .font(.system(size: 18, weight: .bold, design: .rounded))
-                        .foregroundColor(viewModel.currentTheme.textColor)
-                    
-                    Text("Lead Designer & Engineer")
-                        .font(.system(size: 12, weight: .medium, design: .rounded))
-                        .foregroundColor(viewModel.currentTheme.secondaryTextColor)
-                    
-                    Text("NotchDown v1.0.0")
-                        .font(.system(size: 11, weight: .bold, design: .monospaced))
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 4)
-                        .background(viewModel.currentTheme.accentBlue.opacity(0.15))
-                        .foregroundColor(viewModel.currentTheme.accentBlue)
-                        .cornerRadius(8)
-                }
-            }
-            
-            VStack(spacing: 8) {
-                // System Settings Toggles
-                VStack(spacing: 8) {
-                    Toggle("Show Countdown in Menu Bar", isOn: $viewModel.showCountdownInMenuBar)
-                        .toggleStyle(LiquidGlassToggleStyle())
-                        
-                    Toggle("Start at Login", isOn: $viewModel.startAtLogin)
-                        .toggleStyle(LiquidGlassToggleStyle())
-                    
-                    Toggle("Show Dock Icon", isOn: $viewModel.showInDock)
-                        .toggleStyle(LiquidGlassToggleStyle())
-                }
-                .padding(.horizontal, 4)
-                .padding(.vertical, 4)
-                
-                if !viewModel.updateStatusMessage.isEmpty {
-                    Text(viewModel.updateStatusMessage)
-                        .font(.system(size: 11, weight: .medium, design: .rounded))
-                        .foregroundColor(viewModel.currentTheme.secondaryTextColor)
-                        .transition(.opacity)
-                }
-                
-                HStack(spacing: 8) {
-                    Button {
-                        viewModel.handleCheckForUpdates()
-                    } label: {
-                        HStack(spacing: 8) {
-                            if viewModel.isCheckingForUpdates {
-                                ProgressView()
-                                    .controlSize(.small)
-                            } else {
-                                Image(systemName: "arrow.clockwise.circle")
-                            }
-                            Text(viewModel.isCheckingForUpdates ? "Checking..." : "Check Updates")
-                        }
-                        .font(.system(size: 12, weight: .bold, design: .rounded))
-                        .foregroundColor(.white)
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 7)
-                        .background(
-                            Capsule()
-                                .fill(LinearGradient(colors: [.blue, .blue.opacity(0.7)], startPoint: .top, endPoint: .bottom))
-                                .shadow(color: .blue.opacity(0.3), radius: 5, x: 0, y: 3)
-                        )
-                    }
-                    .buttonStyle(PlainButtonStyle())
-                    .disabled(viewModel.isCheckingForUpdates)
-                    
-                    Button {
-                        DiagnosticsManager.shared.runDiagnostics {
-                            // Optionally show results
-                        }
-                    } label: {
-                        HStack(spacing: 8) {
-                            if DiagnosticsManager.shared.isRunningDiagnostics {
-                                ProgressView()
-                                    .controlSize(.small)
-                            } else {
-                                Image(systemName: "stethoscope")
-                            }
-                            Text("Diagnostics")
-                        }
-                        .font(.system(size: 12, weight: .bold, design: .rounded))
-                        .foregroundColor(.white)
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 7)
-                        .background(
-                            Capsule()
-                                .fill(LinearGradient(colors: [.green, .green.opacity(0.7)], startPoint: .top, endPoint: .bottom))
-                                .shadow(color: .green.opacity(0.3), radius: 5, x: 0, y: 3)
-                        )
-                    }
-                    .buttonStyle(PlainButtonStyle())
-                    .disabled(DiagnosticsManager.shared.isRunningDiagnostics)
-                }
             }
         }
-        .padding(.horizontal, 24)
-        .padding(.vertical, 16)
     }
-    
-    // Helper function to load profile image from assets
-    private func loadProfileImage() -> NSImage? {
-        // Try to load from asset catalog first
-        if let image = NSImage(named: "festomanolo") {
-            return image
+
+    private var profileCard: some View {
+        HStack(spacing: 18) {
+            ZStack {
+                Circle()
+                    .stroke(
+                        AngularGradient(colors: [.blue, .purple, .cyan, .blue], center: .center),
+                        lineWidth: 3
+                    )
+                    .frame(width: 82, height: 82)
+                    .rotationEffect(.degrees(haloRotation))
+                    .blur(radius: 2)
+
+                if let profileImage = Self.profileImage {
+                    Image(nsImage: profileImage)
+                        .resizable()
+                        .aspectRatio(contentMode: .fill)
+                        .frame(width: 76, height: 76)
+                        .clipShape(Circle())
+                        .overlay(Circle().stroke(theme.borderColor, lineWidth: 1))
+                        .shadow(color: .blue.opacity(0.3), radius: 10)
+                } else {
+                    Image(systemName: "person.crop.circle.fill")
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                        .frame(width: 76, height: 76)
+                        .foregroundColor(theme.accentBlue)
+                        .shadow(color: .blue.opacity(0.3), radius: 10)
+                }
+            }
+            .onAppear {
+                // Guarded so re-entering the About page does not stack another
+                // repeatForever animation on top of the running one.
+                guard haloRotation == 0 else { return }
+                withAnimation(.linear(duration: 4).repeatForever(autoreverses: false)) {
+                    haloRotation = 360
+                }
+            }
+
+            VStack(alignment: .leading, spacing: 5) {
+                Text("festomanolo")
+                    .font(.system(size: 18, weight: .bold, design: .rounded))
+                    .foregroundColor(theme.textColor)
+
+                Text("Lead Designer & Engineer")
+                    .font(.system(size: 12, weight: .medium, design: .rounded))
+                    .foregroundColor(theme.secondaryTextColor)
+
+                Text("NotchDown v1.0.0")
+                    .font(.system(size: 11, weight: .bold, design: .monospaced))
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(theme.accentBlue.opacity(0.15))
+                    .foregroundColor(theme.accentBlue)
+                    .cornerRadius(8)
+            }
+
+            Spacer(minLength: 0)
         }
-        
-        // Try to load from bundle resources
-        if let imagePath = Bundle.main.path(forResource: "festomanolo", ofType: "jpeg"),
-           let image = NSImage(contentsOfFile: imagePath) {
-            return image
+    }
+
+    private var actionButtons: some View {
+        HStack(spacing: 8) {
+            Button {
+                viewModel.handleCheckForUpdates()
+            } label: {
+                capsuleLabel(
+                    text: viewModel.isCheckingForUpdates ? "Checking…" : "Check Updates",
+                    systemImage: "arrow.clockwise.circle",
+                    showsProgress: viewModel.isCheckingForUpdates,
+                    tint: .blue
+                )
+            }
+            .buttonStyle(PlainButtonStyle())
+            .disabled(viewModel.isCheckingForUpdates)
+
+            Button {
+                viewModel.runDiagnostics()
+            } label: {
+                capsuleLabel(
+                    text: "Diagnostics",
+                    systemImage: "stethoscope",
+                    showsProgress: false,
+                    tint: .green
+                )
+            }
+            .buttonStyle(PlainButtonStyle())
         }
-        
+    }
+
+    @ViewBuilder
+    private func capsuleLabel(text: String, systemImage: String, showsProgress: Bool, tint: Color) -> some View {
+        HStack(spacing: 7) {
+            if showsProgress {
+                ProgressView().controlSize(.small)
+            } else {
+                Image(systemName: systemImage)
+            }
+            Text(text)
+        }
+        .font(.system(size: 12, weight: .bold, design: .rounded))
+        .foregroundColor(.white)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 7)
+        .background(
+            Capsule()
+                .fill(LinearGradient(colors: [tint, tint.opacity(0.72)], startPoint: .top, endPoint: .bottom))
+                .shadow(color: tint.opacity(0.3), radius: 5, x: 0, y: 3)
+        )
+    }
+
+    /// Resolved once — `NSImage(named:)` plus a bundle probe on every render is
+    /// wasteful for an asset that cannot change at runtime.
+    private static let profileImage: NSImage? = {
+        if let image = NSImage(named: "festomanolo") { return image }
+        if let path = Bundle.main.path(forResource: "festomanolo", ofType: "jpeg") {
+            return NSImage(contentsOfFile: path)
+        }
         return nil
-    }
+    }()
 }
 
 // MARK: - About Circle Button
 
 struct AboutCircleButton: View {
+    let theme: AppTheme
     let action: () -> Void
+
     @State private var isHovered = false
-    
+
     var body: some View {
         Button(action: action) {
-            Image(systemName: "exclamationmark")
+            Image(systemName: "info")
                 .font(.system(size: 12, weight: .black))
-                .foregroundColor(.white)
+                .foregroundColor(theme.accentBlue)
                 .frame(width: 24, height: 24)
                 .background(
                     Circle()
-                        .fill(Color.blue.opacity(isHovered ? 0.3 : 0.2))
-                        .overlay(
-                            Circle()
-                                .stroke(Color.blue.opacity(0.4), lineWidth: 1)
-                        )
+                        .fill(Color.blue.opacity(isHovered ? 0.28 : 0.16))
+                        .overlay(Circle().stroke(Color.blue.opacity(0.45), lineWidth: 1))
                 )
         }
         .buttonStyle(PlainButtonStyle())
+        .help("About NotchDown")
         .onHover { hovering in
-            withAnimation(.easeInOut(duration: 0.2)) {
-                isHovered = hovering
-            }
+            withAnimation(.easeInOut(duration: 0.2)) { isHovered = hovering }
         }
         .scaleEffect(isHovered ? 1.1 : 1.0)
         .animation(.spring(response: 0.3, dampingFraction: 0.7), value: isHovered)
     }
 }
 
-// MARK: - iOS 26 Liquid Glass Toggle Style
+// MARK: - Liquid Glass Toggle Style
 
+/// Theme-aware toggle.
+///
+/// Every colour here used to be a hardcoded white — label, knob, track and row
+/// background — so on the light theme the text and the switch both disappeared
+/// into the panel.
 struct LiquidGlassToggleStyle: ToggleStyle {
+    let theme: AppTheme
+
     func makeBody(configuration: Configuration) -> some View {
         HStack {
             configuration.label
-                .font(.system(size: 11, weight: .semibold, design: .rounded))
-                .foregroundColor(.white.opacity(0.7))
-            
-            Spacer()
-            
+                .font(.system(size: 11.5, weight: .semibold, design: .rounded))
+                .foregroundColor(theme.textColor)
+
+            Spacer(minLength: 8)
+
             ZStack {
-                // Outer Track
                 Capsule()
-                    .fill(.ultraThinMaterial)
-                    .frame(width: 44, height: 24)
+                    .fill(configuration.isOn
+                          ? AnyShapeStyle(theme.accentBlue.opacity(0.9))
+                          : AnyShapeStyle(theme.secondaryBackground))
+                    .frame(width: 42, height: 22)
                     .overlay(
                         Capsule()
-                            .stroke(Color.white.opacity(0.2), lineWidth: 1)
+                            .stroke(configuration.isOn ? Color.clear : theme.borderColor, lineWidth: 1)
                     )
-                
-                // Active Glow
-                if configuration.isOn {
-                    Capsule()
-                        .fill(Color.blue.opacity(0.4))
-                        .frame(width: 44, height: 24)
-                        .blur(radius: 6)
-                        .transition(.opacity.combined(with: .scale(scale: 0.8)))
-                }
-                
-                // The Liquid Knob
+
                 Circle()
-                    .fill(.white)
-                    .frame(width: 18, height: 18)
-                    .shadow(color: configuration.isOn ? .blue.opacity(0.6) : .black.opacity(0.3), 
-                            radius: configuration.isOn ? 8 : 3)
-                    .offset(x: configuration.isOn ? 10 : -10)
-                    .animation(.spring(response: 0.45, dampingFraction: 0.65, blendDuration: 0), 
-                               value: configuration.isOn)
+                    .fill(Color.white)
+                    .frame(width: 17, height: 17)
+                    .shadow(color: .black.opacity(0.28), radius: 2, y: 1)
+                    .offset(x: configuration.isOn ? 9.5 : -9.5)
             }
+            .animation(.spring(response: 0.32, dampingFraction: 0.72), value: configuration.isOn)
+            .contentShape(Capsule())
             .onTapGesture {
-                withAnimation {
-                    configuration.isOn.toggle()
-                }
+                configuration.isOn.toggle()
             }
         }
         .padding(.horizontal, 12)
-        .padding(.vertical, 8)
+        .padding(.vertical, 7)
         .background(
-            RoundedRectangle(cornerRadius: 14)
-                .fill(Color.white.opacity(0.04))
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(theme.secondaryBackground.opacity(0.55))
                 .overlay(
-                    RoundedRectangle(cornerRadius: 14)
-                        .stroke(Color.white.opacity(0.05), lineWidth: 0.5)
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .stroke(theme.borderColor.opacity(0.5), lineWidth: 0.5)
                 )
         )
-    }
-}
-
-struct LiquidToggle: View {
-    @Binding var isOn: Bool
-    let label: String
-    
-    var body: some View {
-        Toggle(label, isOn: $isOn)
-            .toggleStyle(LiquidGlassToggleStyle())
     }
 }
 
@@ -1063,59 +989,52 @@ struct LiquidToggle: View {
 
 struct PermissionWarningBanner: View {
     @ObservedObject var viewModel: TimerViewModel
-    
+
     var body: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: 10) {
             Image(systemName: "exclamationmark.triangle.fill")
-                .font(.system(size: 18))
+                .font(.system(size: 16))
                 .foregroundColor(.orange)
-            
-            VStack(alignment: .leading, spacing: 2) {
+
+            VStack(alignment: .leading, spacing: 1) {
                 Text("Permissions Required")
-                    .font(.system(size: 13, weight: .bold, design: .rounded))
+                    .font(.system(size: 12, weight: .bold, design: .rounded))
                     .foregroundColor(viewModel.currentTheme.textColor)
                 Text("Grant automation access in System Settings")
-                    .font(.system(size: 11, weight: .medium, design: .rounded))
+                    .font(.system(size: 10.5, weight: .medium, design: .rounded))
                     .foregroundColor(viewModel.currentTheme.secondaryTextColor)
             }
-            
-            Spacer()
-            
-            Button(action: {
-                if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Automation") {
-                    NSWorkspace.shared.open(url)
-                }
-            }) {
+
+            Spacer(minLength: 4)
+
+            Button {
+                PowerManager.shared.openAutomationSettings()
+            } label: {
                 Text("Open Settings")
                     .font(.system(size: 11, weight: .semibold, design: .rounded))
                     .foregroundColor(.white)
                     .padding(.horizontal, 12)
-                    .padding(.vertical, 6)
-                    .background(
-                        Capsule()
-                            .fill(Color.orange)
-                    )
+                    .padding(.vertical, 5)
+                    .background(Capsule().fill(Color.orange))
             }
             .buttonStyle(PlainButtonStyle())
-            
-            Button(action: {
-                withAnimation {
-                    viewModel.showPermissionWarning = false
-                }
-            }) {
+
+            Button {
+                withAnimation { viewModel.showPermissionWarning = false }
+            } label: {
                 Image(systemName: "xmark.circle.fill")
-                    .font(.system(size: 16))
+                    .font(.system(size: 15))
                     .foregroundColor(viewModel.currentTheme.secondaryTextColor)
             }
             .buttonStyle(PlainButtonStyle())
         }
-        .padding(12)
+        .padding(10)
         .background(
-            RoundedRectangle(cornerRadius: 12)
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .fill(Color.orange.opacity(0.15))
                 .overlay(
-                    RoundedRectangle(cornerRadius: 12)
-                        .stroke(Color.orange.opacity(0.3), lineWidth: 1)
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .stroke(Color.orange.opacity(0.35), lineWidth: 1)
                 )
         )
         .transition(.move(edge: .top).combined(with: .opacity))

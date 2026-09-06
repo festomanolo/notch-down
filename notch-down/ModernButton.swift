@@ -31,7 +31,7 @@ struct ModernButton: View {
                         // Base glass layer
                         RoundedRectangle(cornerRadius: 14, style: .continuous)
                             .fill(.ultraThinMaterial)
-                            .opacity(isSelected ? 0 : 1)
+                            .opacity(isSelected ? 0 : 0.6)
                         
                         // Selected state liquid fill
                         if isSelected {
@@ -85,14 +85,17 @@ struct ModernButton: View {
             withAnimation(.easeInOut(duration: 0.2)) {
                 isHovered = hovering
             }
-            
+
             if hovering {
-                // Start rotating glow
-                withAnimation(.linear(duration: 2).repeatForever(autoreverses: false)) {
-                    glowRotation = 360
+                // Only kick off the rotation if one is not already running —
+                // re-entering the button used to stack a second (and third…)
+                // repeatForever animation on the same property.
+                if glowRotation == 0 {
+                    withAnimation(.linear(duration: 2).repeatForever(autoreverses: false)) {
+                        glowRotation = 360
+                    }
                 }
             } else {
-                // Stop rotating glow
                 withAnimation(.easeOut(duration: 0.3)) {
                     glowRotation = 0
                 }
@@ -104,27 +107,33 @@ struct ModernButton: View {
     }
 }
 
-/// Minimize button with modern design
+/// Minimize button with modern design.
+///
+/// Takes the theme: the glyph and its well were hardcoded white, so on the
+/// light background this button was white-on-white and effectively invisible.
 struct MinimizeButton: View {
+    let theme: AppTheme
     let action: () -> Void
+
     @State private var isHovered = false
-    
+
     var body: some View {
         Button(action: action) {
             Image(systemName: "chevron.down")
                 .font(.system(size: 12, weight: .bold))
-                .foregroundColor(.white)
+                .foregroundColor(theme.textColor.opacity(0.85))
                 .frame(width: 24, height: 24)
                 .background(
                     Circle()
-                        .fill(Color.white.opacity(isHovered ? 0.2 : 0.1))
+                        .fill(theme.secondaryBackground.opacity(isHovered ? 1.6 : 1.0))
                         .overlay(
                             Circle()
-                                .stroke(Color.white.opacity(0.3), lineWidth: 1)
+                                .stroke(theme.borderColor, lineWidth: 1)
                         )
                 )
         }
         .buttonStyle(PlainButtonStyle())
+        .help("Minimize to the notch")
         .onHover { hovering in
             withAnimation(.easeInOut(duration: 0.2)) {
                 isHovered = hovering

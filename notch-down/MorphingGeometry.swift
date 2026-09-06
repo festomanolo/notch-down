@@ -16,10 +16,13 @@ struct MorphingGeometry {
     
     /// Base geometry definitions for Dynamic Island states
     private struct BaseGeometry {
-        static let collapsedSize = CGSize(width: 200, height: 37) // Standard Dynamic Island size
-        static let expandedSize = CGSize(width: 400, height: 200) // Compact expanded state
-        static let criticalSize = CGSize(width: 420, height: 220) // Slightly larger for urgent alerts
-        static let aboutSize = CGSize(width: 420, height: 300) // For info/settings
+        // Sizes are the *content* box; NotchWindowController adds padding for
+        // shadows and glow. Widened from the original values, which clipped the
+        // About page and squeezed the expanded header row's trailing buttons.
+        static let collapsedSize = CGSize(width: 240, height: 38)  // Pill, fits "Shutdown 1:00:00"
+        static let expandedSize = CGSize(width: 460, height: 250)  // Compact expanded state
+        static let criticalSize = CGSize(width: 490, height: 290)  // Room for the full roller + urgency row
+        static let aboutSize = CGSize(width: 470, height: 428)     // For info/settings
         
         static let collapsedRadius: Double = 18.5 // Perfectly round pill ends
         static let expandedRadius: Double = 24.0
@@ -65,6 +68,82 @@ struct MorphingGeometry {
         }
     }
     
+    // MARK: - Content-aware sizing
+
+    /// What the island is currently showing.
+    ///
+    /// The expanded state's height varies a lot with its content — a preset
+    /// picker is roughly 140pt while a running countdown with the digit roller
+    /// is over 220 — so a single per-state height either clipped the roller or
+    /// left a slab of dead space under the buttons.
+    struct ContentContext: Equatable {
+        var isTimerActive = false
+        var isShowingSuggestion = false
+        var isShowingCustomInput = false
+        var showsPermissionWarning = false
+
+        static let empty = ContentContext()
+    }
+
+    /// Frame for a state, sized to what it is actually displaying.
+    ///
+    /// These are explicit numbers rather than a measurement of the live view on
+    /// purpose. The height has to be a continuous, animatable value for the
+    /// morph spring to interpolate; feeding it back from a GeometryReader
+    /// through a preference lags a layout pass and reads the *outgoing* state's
+    /// height mid-transition, which pinned the island at pill height.
+    ///
+    /// If a state's layout changes, update its figure here.
+    static func calculateFrame(for state: IslandState, content: ContentContext) -> CGSize {
+        var size = calculateFrame(for: state)
+
+        switch state {
+        case .expanded, .critical:
+            if content.isShowingSuggestion {
+                size.height = 178
+            } else if content.isTimerActive {
+                size.height = state == .critical ? 246 : 234
+            } else if content.isShowingCustomInput {
+                size.height = 178
+            } else {
+                size.height = 150
+            }
+            if content.showsPermissionWarning {
+                size.height += 64
+            }
+
+        case .about:
+            size.height = 386
+
+        case .collapsed, .collapsing, .expanding:
+            break
+        }
+
+        return size
+    }
+
+    /// The largest frame any state can occupy, across every content variation.
+    ///
+    /// The window is sized to this once and never resized, so the island can
+    /// morph freely inside it without dragging AppKit's layout engine along.
+    static var largestStateSize: CGSize {
+        let worstCase = ContentContext(
+            isTimerActive: true,
+            isShowingSuggestion: false,
+            isShowingCustomInput: false,
+            showsPermissionWarning: true
+        )
+
+        return IslandState.allCases.reduce(CGSize.zero) { partial, state in
+            let plain = calculateFrame(for: state, content: .empty)
+            let loaded = calculateFrame(for: state, content: worstCase)
+            return CGSize(
+                width: max(partial.width, max(plain.width, loaded.width)),
+                height: max(partial.height, max(plain.height, loaded.height))
+            )
+        }
+    }
+
     /// Calculate frame size with custom progress for smooth morphing animations
     /// - Parameters:
     ///   - fromState: Starting island state

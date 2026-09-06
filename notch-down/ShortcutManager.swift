@@ -13,25 +13,29 @@ import AppKit
 class ShortcutManager {
     static let shared = ShortcutManager()
     
+    private var hotKeyRef: EventHotKeyRef?
+    private var eventHandler: EventHandlerRef?
+    
     /// Registers a global hotkey for Shift + Ctrl + U
     func registerGlobalShortcut() {
-        var hotKeyRef: EventHotKeyRef?
-        var eventHandler: EventHandlerRef?
-        let eventType = EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed))
+        var eventType = EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed))
         
         // Define the handler as a traditional C-style callback for Carbon
         let handler: EventHandlerUPP = { (_, _, _) -> OSStatus in
-            NotificationCenter.default.post(name: .expandDynamicIsland, object: nil)
+            DispatchQueue.main.async {
+                NotificationCenter.default.post(name: .expandDynamicIsland, object: nil)
+            }
             return noErr
         }
         
-        InstallEventHandler(GetApplicationEventTarget(), handler, 1, [eventType], nil, &eventHandler)
+        let dispatcher = GetEventDispatcherTarget()
+        InstallEventHandler(dispatcher, handler, 1, &eventType, nil, &eventHandler)
         
         let hotKeyID = EventHotKeyID(signature: fourCharCode("NTCH"), id: 1)
         let modifiers = UInt32(shiftKey | controlKey)
         let keyCode = UInt32(kVK_ANSI_U)
         
-        RegisterEventHotKey(keyCode, modifiers, hotKeyID, GetApplicationEventTarget(), 0, &hotKeyRef)
+        RegisterEventHotKey(keyCode, modifiers, hotKeyID, dispatcher, 0, &hotKeyRef)
     }
 }
 

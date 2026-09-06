@@ -62,10 +62,10 @@ struct IslandBackground: View {
             startGlowAnimation()
             updateMorphProgress()
         }
-        .onChange(of: state) { _ in
+        .onChange(of: state) {
             updateMorphProgress()
         }
-        .onChange(of: urgency) { _ in
+        .onChange(of: urgency) {
             startGlowAnimation()
         }
     }

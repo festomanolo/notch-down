@@ -4,6 +4,8 @@
 <dict>
         <key>LSUIElement</key>
         <true/>
+        <key>NSSupportsSuddenTermination</key>
+        <false/>
         <key>BuildMachineOSBuild</key>
         <string>25D5101c</string>
         <key>CFBundleDevelopmentRegion</key>

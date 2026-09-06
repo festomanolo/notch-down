@@ -10,24 +10,49 @@ import IOKit.pwr_mgt
 import AppKit
 import Combine
 
-enum PowerAction: CaseIterable {
+enum PowerAction: CaseIterable, Identifiable {
     case shutdown, restart, logout, sleep
-    
+
+    var id: Self { self }
+
     var iconName: String {
         switch self {
         case .shutdown: return "power"
         case .restart: return "arrow.clockwise"
         case .sleep: return "moon.zzz.fill"
-        case .logout: return "person.and.arrow.left.and.arrow.right"
+        case .logout: return "rectangle.portrait.and.arrow.right"
         }
     }
-    
+
     var displayName: String {
         switch self {
         case .shutdown: return "Shutdown"
         case .restart: return "Restart"
         case .sleep: return "Sleep"
         case .logout: return "Log Out"
+        }
+    }
+
+    /// Bare verb for sentences like "System will shut down".
+    ///
+    /// `displayName.lowercased()` gave "System will shutdown", which reads as a
+    /// noun where a verb belongs.
+    var presentVerb: String {
+        switch self {
+        case .shutdown: return "shut down"
+        case .restart:  return "restart"
+        case .sleep:    return "sleep"
+        case .logout:   return "log out"
+        }
+    }
+
+    /// Verb used in confirmation copy, e.g. "shut down your Mac".
+    var verbPhrase: String {
+        switch self {
+        case .shutdown: return "shut down your Mac"
+        case .restart: return "restart your Mac"
+        case .sleep: return "put your Mac to sleep"
+        case .logout: return "log out of your account"
         }
     }
 }
@@ -37,257 +62,229 @@ enum PowerManagerError: Error {
     case permissionDenied
     case fallbackFailed
     case verificationFailed
-    
+    case cancelled
+    case busy
+
     var localizedDescription: String {
         switch self {
         case .scriptExecutionFailed(let details):
             return "Failed to execute power command: \(details)"
         case .permissionDenied:
-            return "Permission denied. Please grant automation permissions in System Settings."
+            return "Permission denied. Grant NotchDown automation access in System Settings › Privacy & Security › Automation."
         case .fallbackFailed:
             return "Primary and fallback methods failed."
         case .verificationFailed:
             return "Could not verify permissions."
+        case .cancelled:
+            return "Cancelled."
+        case .busy:
+            return "Another power operation is already in progress."
         }
     }
 }
 
+/// Executes power actions.
+///
+/// Everything here is main-actor bound on purpose: `NSAppleScript` is not
+/// thread-safe and must not be executed from a background queue (the previous
+/// implementation ran it on `.userInteractive`, which intermittently corrupted
+/// the AppleEvent machinery), and `NSAlert.runModal` must run on the main thread.
+@MainActor
 class PowerManager: ObservableObject {
     static let shared = PowerManager()
-    
+
     @Published var lastError: PowerManagerError?
     @Published var isExecuting: Bool = false
-    
-    private var executionInProgress: Bool = false
-    
-    /// Execute a power action with comprehensive error handling and fallback mechanisms
-    func execute(_ action: PowerAction, completion: ((Result<Void, PowerManagerError>) -> Void)? = nil) {
-        // Prevent concurrent executions
-        guard !executionInProgress else {
-            let error = PowerManagerError.scriptExecutionFailed("Another power operation is in progress")
-            DispatchQueue.main.async {
-                self.lastError = error
-                completion?(.failure(error))
-            }
+
+    /// AppleScript error codes that mean "the user has not granted (or has
+    /// revoked) automation access", as opposed to a genuine scripting failure.
+    private static let permissionErrorCodes: Set<Int> = [-1743, -1744, -10004]
+
+    /// Execute a power action.
+    ///
+    /// - Parameters:
+    ///   - action: what to do.
+    ///   - confirm: show a confirmation sheet first. Countdown expiry passes
+    ///     `false` — starting the timer *was* the confirmation, and a modal that
+    ///     nobody is present to answer would silently cancel the action.
+    func execute(_ action: PowerAction,
+                 confirm: Bool = true,
+                 completion: ((Result<Void, PowerManagerError>) -> Void)? = nil) {
+        guard !isExecuting else {
+            lastError = .busy
+            completion?(.failure(.busy))
             return
         }
-        
-        executionInProgress = true
-        DispatchQueue.main.async {
-            self.isExecuting = true
+
+        if confirm && !confirmWithUser(for: action) {
+            completion?(.failure(.cancelled))
+            return
         }
-        
-        // Show confirmation dialog for destructive actions
-        if shouldConfirm(action) {
-            DispatchQueue.main.async {
-                self.showConfirmationDialog(for: action) { confirmed in
-                    if confirmed {
-                        self.performExecution(action, completion: completion)
-                    } else {
-                        self.executionInProgress = false
-                        self.isExecuting = false
-                        completion?(.failure(.scriptExecutionFailed("User cancelled")))
-                    }
-                }
-            }
-        } else {
-            performExecution(action, completion: completion)
+
+        isExecuting = true
+
+        let result = performExecution(action)
+
+        isExecuting = false
+
+        switch result {
+        case .success:
+            lastError = nil
+        case .failure(let error):
+            lastError = error
         }
+
+        completion?(result)
     }
-    
-    /// Verify if the app has necessary permissions
+
+    /// Verify that the app can drive System Events.
     func verifyPermissions(completion: @escaping (Bool) -> Void) {
-        // Test with a harmless AppleScript command
+        // A no-op query: succeeds only if automation access has been granted.
         let testScript = "tell application \"System Events\" to get name"
-        
-        DispatchQueue.global(qos: .userInitiated).async {
-            if let script = NSAppleScript(source: testScript) {
-                var error: NSDictionary?
-                script.executeAndReturnError(&error)
-                
-                DispatchQueue.main.async {
-                    completion(error == nil)
-                }
-            } else {
-                DispatchQueue.main.async {
-                    completion(false)
-                }
-            }
+
+        guard let script = NSAppleScript(source: testScript) else {
+            completion(false)
+            return
         }
+
+        var error: NSDictionary?
+        script.executeAndReturnError(&error)
+        completion(error == nil)
     }
-    
-    /// Check if action requires user confirmation
-    private func shouldConfirm(_ action: PowerAction) -> Bool {
-        // Only sleep doesn't require confirmation for quick access
-        return action != .sleep
-    }
-    
-    /// Show confirmation dialog
-    private func showConfirmationDialog(for action: PowerAction, completion: @escaping (Bool) -> Void) {
+
+    // MARK: - Confirmation
+
+    private func confirmWithUser(for action: PowerAction) -> Bool {
+        // NotchDown is an LSUIElement accessory app, so it is usually not the
+        // active application. Without this the alert opens *behind* whatever the
+        // user is looking at and the action appears to do nothing.
+        NSApp.activate(ignoringOtherApps: true)
+
         let alert = NSAlert()
         alert.messageText = "Confirm \(action.displayName)"
-        alert.informativeText = "Are you sure you want to \(action.displayName.lowercased()) your Mac?"
+        alert.informativeText = "Are you sure you want to \(action.verbPhrase)?"
         alert.alertStyle = .warning
         alert.addButton(withTitle: action.displayName)
         alert.addButton(withTitle: "Cancel")
-        
-        let response = alert.runModal()
-        completion(response == .alertFirstButtonReturn)
+        alert.window.level = .modalPanel
+
+        return alert.runModal() == .alertFirstButtonReturn
     }
-    
-    /// Perform the actual execution with fallback
-    private func performExecution(_ action: PowerAction, completion: ((Result<Void, PowerManagerError>) -> Void)?) {
-        DispatchQueue.global(qos: .userInteractive).async {
-            // Try primary method (AppleScript)
-            let primaryResult = self.executePrimaryMethod(action)
-            
-            if case .failure = primaryResult {
-                // Try fallback method
-                let fallbackResult = self.executeFallbackMethod(action)
-                
-                if case .failure(let error) = fallbackResult {
-                    // Both methods failed
-                    DispatchQueue.main.async {
-                        self.lastError = error
-                        self.executionInProgress = false
-                        self.isExecuting = false
-                        self.showErrorDialog(error)
-                        completion?(.failure(error))
-                    }
-                    return
-                }
-            }
-            
-            // Success
-            DispatchQueue.main.async {
-                self.executionInProgress = false
-                self.isExecuting = false
-                completion?(.success(()))
-            }
+
+    // MARK: - Execution
+
+    private func performExecution(_ action: PowerAction) -> Result<Void, PowerManagerError> {
+        let primary = executePrimaryMethod(action)
+        if case .success = primary { return .success(()) }
+
+        let fallback = executeFallbackMethod(action)
+        if case .success = fallback { return .success(()) }
+
+        // Prefer reporting the primary failure — it carries the real diagnostic.
+        if case .failure(let primaryError) = primary {
+            return .failure(primaryError)
         }
+        return fallback
     }
-    
-    /// Primary execution method using AppleScript
+
+    /// Primary execution method using AppleScript.
     private func executePrimaryMethod(_ action: PowerAction) -> Result<Void, PowerManagerError> {
         let scriptSource: String
-        
+
         switch action {
         case .shutdown:
             scriptSource = "tell application \"System Events\" to shut down"
         case .restart:
             scriptSource = "tell application \"System Events\" to restart"
         case .logout:
-            // Fixed: Send Apple Event directly to loginwindow for robust logout
-            // «event aevtrlgo» is the Apple Event code for 'really log out'
-            scriptSource = "tell application \"loginwindow\" to «event aevtrlgo»"
+            scriptSource = "tell application \"System Events\" to log out"
         case .sleep:
-            // Use IOKit directly as primary method for sleep
-            let result = executeSleepViaIOKit()
-            return result
+            // IOKit is both faster and more reliable than scripting for sleep.
+            return executeSleepViaIOKit()
         }
-        
-        if let script = NSAppleScript(source: scriptSource) {
-            var error: NSDictionary?
-            script.executeAndReturnError(&error)
-            
-            if let error = error {
-                let errorMessage = error["NSAppleScriptErrorMessage"] as? String ?? "Unknown error"
-                return .failure(.scriptExecutionFailed(errorMessage))
-            }
-            return .success(())
+
+        guard let script = NSAppleScript(source: scriptSource) else {
+            return .failure(.scriptExecutionFailed("Failed to compile AppleScript"))
         }
-        
-        return .failure(.scriptExecutionFailed("Failed to create AppleScript"))
+
+        var error: NSDictionary?
+        script.executeAndReturnError(&error)
+
+        guard let error = error else { return .success(()) }
+
+        let code = error[NSAppleScript.errorNumber] as? Int ?? 0
+        if Self.permissionErrorCodes.contains(code) {
+            return .failure(.permissionDenied)
+        }
+
+        let message = error[NSAppleScript.errorMessage] as? String ?? "Unknown error (\(code))"
+        return .failure(.scriptExecutionFailed(message))
     }
-    
-    /// Fallback execution method using IOKit and system commands
+
+    /// Fallback execution method using IOKit and system commands.
     private func executeFallbackMethod(_ action: PowerAction) -> Result<Void, PowerManagerError> {
         switch action {
         case .sleep:
-            // Use IOKit for sleep
             return executeSleepViaIOKit()
         case .logout, .shutdown, .restart:
-            // For other actions, try shell command as last resort
-            return executeViaShellCommand(action)
+            return executeViaAppleEvent(action)
         }
     }
-    
-    /// Execute sleep using IOKit (most reliable for sleep)
+
+    /// Execute sleep using IOKit (most reliable for sleep).
     private func executeSleepViaIOKit() -> Result<Void, PowerManagerError> {
         let port = IOPMFindPowerManagement(mach_port_t(MACH_PORT_NULL))
-        if port != MACH_PORT_NULL {
-            IOPMSleepSystem(port)
-            return .success(())
+        guard port != MACH_PORT_NULL else { return .failure(.fallbackFailed) }
+
+        let status = IOPMSleepSystem(port)
+        IOServiceClose(port)
+
+        return status == kIOReturnSuccess ? .success(()) : .failure(.fallbackFailed)
+    }
+
+    /// Fallback: send the raw Apple Event straight to loginwindow.
+    ///
+    /// Deliberately does *not* shell out to `launchctl bootout user/$(id -u)`
+    /// like the previous implementation — that force-kills the entire user
+    /// session with no chance for apps to save, and fails without root anyway.
+    private func executeViaAppleEvent(_ action: PowerAction) -> Result<Void, PowerManagerError> {
+        let eventCode: String
+        switch action {
+        case .shutdown: eventCode = "rsdn"
+        case .restart:  eventCode = "rrst"
+        case .logout:   eventCode = "rlgo"
+        case .sleep:    eventCode = "slep"
+        }
+
+        let source = "tell application \"loginwindow\" to «event aevt\(eventCode)»"
+
+        guard let script = NSAppleScript(source: source) else {
+            return .failure(.fallbackFailed)
+        }
+
+        var error: NSDictionary?
+        script.executeAndReturnError(&error)
+
+        guard let error = error else { return .success(()) }
+
+        let code = error[NSAppleScript.errorNumber] as? Int ?? 0
+        if Self.permissionErrorCodes.contains(code) {
+            return .failure(.permissionDenied)
         }
         return .failure(.fallbackFailed)
     }
-    
-    /// Execute via shell command (last resort)
-    private func executeViaShellCommand(_ action: PowerAction) -> Result<Void, PowerManagerError> {
-        let command: String
-        
-        switch action {
-        case .shutdown:
-            command = "osascript -e 'tell app \"System Events\" to shut down'"
-        case .restart:
-            command = "osascript -e 'tell app \"System Events\" to restart'"
-        case .logout:
-            // Force logout via launchctl
-            command = "/bin/launchctl bootout user/$(id -u)"
-        case .sleep:
-            // pmset sleepnow is a good fallback
-            command = "/usr/bin/pmset sleepnow"
-        }
-        
-        let task = Process()
-        task.launchPath = "/bin/sh"
-        task.arguments = ["-c", command]
-        
-        do {
-            try task.run()
-            task.waitUntilExit()
-            
-            if task.terminationStatus == 0 {
-                return .success(())
-            } else {
-                return .failure(.fallbackFailed)
-            }
-        } catch {
-            return .failure(.fallbackFailed)
-        }
-    }
-    
-    /// Show error dialog to user
-    private func showErrorDialog(_ error: PowerManagerError) {
-        let alert = NSAlert()
-        alert.messageText = "Power Action Failed"
-        alert.informativeText = error.localizedDescription
-        alert.alertStyle = .critical
-        
-        if case .permissionDenied = error {
-            alert.addButton(withTitle: "Open System Settings")
-            alert.addButton(withTitle: "OK")
-            
-            if alert.runModal() == .alertFirstButtonReturn {
-                openSystemSettings()
-            }
-        } else {
-            alert.addButton(withTitle: "OK")
-            alert.runModal()
-        }
-    }
-    
-    /// Open System Settings to Automation preferences
-    private func openSystemSettings() {
+
+    // MARK: - Settings
+
+    /// Open System Settings to the Automation privacy pane.
+    func openAutomationSettings() {
         if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Automation") {
             NSWorkspace.shared.open(url)
         }
     }
-    
-    /// Test a power action without executing (for debugging)
+
+    /// Test whether an action would be permitted, without executing it.
     func testAction(_ action: PowerAction, completion: @escaping (Bool) -> Void) {
-        verifyPermissions { hasPermission in
-            completion(hasPermission)
-        }
+        verifyPermissions(completion: completion)
     }
 }

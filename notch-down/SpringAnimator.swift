@@ -54,10 +54,14 @@ struct SpringAnimator {
             dampingFraction: params.damping
         )
         
-        // Adjust animation speed based on urgency level
+        // Adjust animation speed based on urgency level.
+        //
+        // `.speed(0)` is NOT "no animation" — it scales the duration to
+        // infinity, leaving the value permanently mid-interpolation. Normal
+        // urgency returns a plain, finite settle instead.
         switch urgencyLevel {
         case .normal:
-            return baseAnimation.speed(0.0) // No pulsing for normal state
+            return baseAnimation
         case .warning:
             return baseAnimation.repeatForever(autoreverses: true).speed(0.5)
         case .critical:
@@ -95,15 +99,13 @@ struct SpringAnimator {
         return .easeInOut(duration: 0.4)
     }
     
-    /// Creates button selection animation for timer option buttons
+    /// Creates button selection animation for timer option buttons.
+    ///
+    /// Uses response/damping rather than raw mass/stiffness: the old
+    /// `stiffness: 0.9` gave a natural period of roughly six seconds, so a
+    /// button press appeared to do nothing at all.
     static func buttonSelection() -> Animation {
-        return .interpolatingSpring(
-            mass: 0.8,
-            stiffness: 0.9,
-            damping: 0.7,
-            initialVelocity: 0.0
-        )
-        .speed(1.5)
+        return .spring(response: 0.28, dampingFraction: 0.7, blendDuration: 0)
     }
     
     // MARK: - Animation Timing Utilities
@@ -197,18 +199,22 @@ extension Animation {
 // MARK: - SwiftUI View Modifiers
 
 extension View {
-    /// Applies spring animation for Dynamic Island morphing
-    func dynamicIslandMorph() -> some View {
-        self.animation(.dynamicIslandSpring, value: UUID())
+    /// Applies spring animation for Dynamic Island morphing.
+    func dynamicIslandMorph(for state: IslandState) -> some View {
+        self.animation(.dynamicIslandSpring, value: state)
     }
-    
+
     /// Applies urgency pulse animation based on urgency level
     func urgencyPulse(_ level: UrgencyLevel) -> some View {
         self.animation(.urgencyPulse(level: level), value: level)
     }
-    
-    /// Applies slot machine roll animation for number changes
-    func slotMachineRoll() -> some View {
-        self.animation(.slotMachineRoll, value: UUID())
+
+    /// Applies slot machine roll animation for number changes.
+    ///
+    /// Takes the changing value explicitly. The previous `value: UUID()` form
+    /// produced a fresh sentinel on every body evaluation, so SwiftUI restarted
+    /// the animation on each render and never settled.
+    func slotMachineRoll<V: Equatable>(value: V) -> some View {
+        self.animation(.slotMachineRoll, value: value)
     }
 }

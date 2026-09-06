@@ -3,18 +3,42 @@
 # Configuration
 APP_NAME="notch-down"
 APP_BUNDLE="DerivedData/Build/Products/Release/${APP_NAME}.app"
-# Final name including professional branding
-DMG_NAME="NotchDown_v1.1.0_Installer.dmg"
+
 DMG_TMP="temp_notchdown.dmg"
-VOL_NAME="NotchDown v1.1.0"
 LICENSE_FILE="License.txt"
 
-# Check if app exists
+# Build a fresh universal (Apple Silicon + Intel) Release binary.
+#
+# The generic destination matters: with a scheme and no -destination, xcodebuild
+# resolves the concrete "My Mac" destination and pins the build to that Mac's
+# own architecture, silently producing a single-arch app no matter what ARCHS
+# says. A single-arch x86_64 build needs Rosetta on every Apple Silicon Mac.
+echo "Building universal Release binary..."
+xcodebuild -project notch-down.xcodeproj \
+    -scheme "${APP_NAME}" \
+    -configuration Release \
+    -destination 'generic/platform=macOS' \
+    -derivedDataPath ./DerivedData \
+    build || { echo "Error: build failed"; exit 1; }
+
 if [ ! -d "${APP_BUNDLE}" ]; then
     echo "Error: App bundle not found at ${APP_BUNDLE}"
-    echo "Please build the app first with: xcodebuild -scheme notch-down -configuration Release -derivedDataPath ./DerivedData build"
     exit 1
 fi
+
+# Version comes from the built app, so the installer can never claim a
+# different version than the bundle it contains.
+VERSION=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" \
+    "${APP_BUNDLE}/Contents/Info.plist" 2>/dev/null || echo "1.0")
+DMG_NAME="NotchDown_v${VERSION}_Installer.dmg"
+VOL_NAME="NotchDown ${VERSION}"
+
+ARCHS_BUILT=$(lipo -archs "${APP_BUNDLE}/Contents/MacOS/${APP_NAME}")
+echo "  Architectures: ${ARCHS_BUILT}"
+case "${ARCHS_BUILT}" in
+    *arm64*) ;;
+    *) echo "Error: arm64 slice missing - refusing to ship an Intel-only build"; exit 1 ;;
+esac
 
 # Cleanup
 echo "Cleaning up old build artifacts..."
@@ -33,7 +57,7 @@ ln -s /Applications build/dmg_content/Applications
 
 # Create temp DMG
 echo "Creating temporary writable disk image..."
-hdiutil create -size 250m -fs HFS+ -volname "${VOL_NAME}" "${DMG_TMP}"
+hdiutil create -size 100m -fs HFS+ -volname "${VOL_NAME}" "${DMG_TMP}"
 
 # Mount DMG with explicit readwrite and noautoopen
 echo "Mounting temporary image (Read-Write)..."
@@ -48,7 +72,7 @@ sync
 
 # Setup window via AppleScript
 echo "Setting up Finder window layout..."
-osascript <<EOF
+osascript <<EOF || echo "  (Finder layout skipped - grant Automation access to set it)"
 tell application "Finder"
     tell disk "${VOL_NAME}"
         open

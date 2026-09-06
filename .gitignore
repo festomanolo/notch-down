@@ -28,5 +28,6 @@ xcuserdata/
 *.sh
 !create_dmg.sh
 build_log*.txt
+sample*.txt
 *.dmg
 DerivedData/

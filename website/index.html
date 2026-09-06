@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NotchDown — schedule your Mac's shutdown from the notch</title>
+<meta name="description" content="NotchDown puts a countdown under the notch. When it reaches zero your Mac shuts down, restarts, sleeps, or logs out. A free menu bar app for macOS.">
+<meta name="color-scheme" content="light">
+<link rel="stylesheet" href="styles.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='9' fill='%230A0C11'/><rect x='6' y='13' width='20' height='6' rx='3' fill='%230A84FF'/></svg>">
+
+<meta property="og:title" content="NotchDown — schedule your Mac's shutdown from the notch">
+<meta property="og:description" content="A countdown under the notch. When it reaches zero your Mac shuts down, restarts, sleeps, or logs out.">
+<meta property="og:type" content="website">
+</head>
+<body>
+
+<!-- The top of the page is the top of the screen. The island hangs from it. -->
+<div class="bezel" aria-hidden="true"></div>
+
+<header class="hero">
+  <div class="hero__stage">
+    <img class="hero__pill" src="assets/shots/pill_dark.png" width="286" height="84"
+         alt="The NotchDown pill sitting under the notch, reading: Shutdown 11:57.">
+  </div>
+
+  <div class="hero__copy">
+    <h1>Tell your Mac when to stop.</h1>
+    <p class="lede">
+      Start a countdown, then walk away. When it reaches zero your Mac shuts down,
+      restarts, sleeps, or logs out — whichever you picked. The timer lives under
+      the notch, so you can see it without opening anything.
+    </p>
+
+    <a class="download" href="https://github.com/festomanolo/notch-down/releases/download/v1.0/NotchDown_v1.0_Installer.dmg" download>
+      Download for macOS
+    </a>
+
+    <dl class="facts">
+      <div><dt>Version</dt><dd>1.0</dd></div>
+      <div><dt>Size</dt><dd>2.3&nbsp;MB</dd></div>
+      <div><dt>Requires</dt><dd>macOS 26.2</dd></div>
+      <div><dt>Price</dt><dd>Free</dd></div>
+    </dl>
+  </div>
+</header>
+
+<main>
+
+<!-- ─────────────────────────── Choosing ─────────────────────────── -->
+<section class="section" id="choose">
+  <div class="section__head">
+    <h2>Pick how long. Pick what happens.</h2>
+    <p>
+      Click the pill and it opens. Four presets, an action menu, and a start
+      button that tells you exactly what it is about to schedule — no second
+      guessing which of the four you left selected.
+    </p>
+  </div>
+
+  <figure class="shot shot--wide">
+    <img src="assets/shots/expanded_dark.png" width="506" height="196"
+         alt="The expanded island showing preset buttons for 5m, 10m, 30m and 1h, a Custom button, and a green button reading Shutdown in 10m.">
+  </figure>
+
+  <div class="pair">
+    <figure class="shot">
+      <img src="assets/shots/custom_dark.png" width="506" height="224"
+           alt="The custom duration view with hours, minutes and seconds pickers and an action menu set to Restart.">
+      <figcaption>Anything the presets miss, down to the second.</figcaption>
+    </figure>
+    <div class="pair__text">
+      <h3>Four actions</h3>
+      <p>
+        Shutdown, restart, sleep, and log out. Sleep goes through IOKit; the rest
+        go through System&nbsp;Events, so macOS closes your apps properly and gives
+        anything with unsaved work a chance to say so.
+      </p>
+      <h3>Change your mind</h3>
+      <p>
+        Add five minutes or cancel outright, from the island or the menu bar.
+        Swipe right across the pill to snooze, left to cancel.
+      </p>
+    </div>
+  </div>
+</section>
+
+<!-- ─────────────────────── The countdown itself ─────────────────────── -->
+<section class="section" id="countdown">
+  <div class="section__head">
+    <h2>It gets louder as it gets closer.</h2>
+    <p>
+      A countdown you can ignore is a countdown that will surprise you. NotchDown
+      escalates on a fixed schedule, so the last minute is impossible to miss and
+      everything before it stays out of your way.
+    </p>
+  </div>
+
+  <ol class="rail">
+    <li class="rail__step">
+      <span class="rail__time">T−10:00</span>
+      <div class="rail__body">
+        <h3>Out of the way</h3>
+        <p>
+          The pill tucks under the notch showing the action and the time left.
+          It peeks out every couple of minutes, then hides again.
+        </p>
+        <figure class="shot shot--inline">
+          <img src="assets/shots/pill_dark.png" width="286" height="84"
+               alt="The collapsed pill reading Shutdown 11:57.">
+        </figure>
+      </div>
+    </li>
+
+    <li class="rail__step">
+      <span class="rail__time rail__time--amber">T−1:00</span>
+      <div class="rail__body">
+        <h3>One minute left</h3>
+        <p>
+          The island drops open on its own, the countdown turns amber, and a
+          chime plays. If you were heads-down in something else, this is the
+          moment you find out.
+        </p>
+        <figure class="shot shot--inline">
+          <img src="assets/shots/running_dark.png" width="506" height="280"
+               alt="The open island showing a large 11 minutes 57 seconds countdown, the caption System will shut down, and buttons for plus 5 minutes and Cancel Timer.">
+        </figure>
+      </div>
+    </li>
+  </ol>
+</section>
+
+<!-- ────────────────── The final ten seconds (dark) ────────────────── -->
+<section class="night" id="final">
+  <div class="night__inner">
+    <p class="night__time">T−0:10</p>
+    <h2>The last ten seconds.</h2>
+    <p class="night__lede">
+      Red, pulsing, and ticking once a second. The island nudges sideways to
+      catch your eye. Cancel is still one click away — right up until it isn't.
+    </p>
+    <figure class="shot shot--night">
+      <img src="assets/shots/critical_dark.png" width="536" height="314"
+           alt="The island glowing red, showing 00:08 remaining with the warning CRITICAL — Less than 10 seconds, above buttons for plus 5 minutes and Cancel Timer.">
+    </figure>
+    <p class="night__note">
+      Alert sounds can be turned off. The visual escalation cannot — that is the
+      whole point of it.
+    </p>
+  </div>
+</section>
+
+<!-- ─────────────────────────── Menu bar ─────────────────────────── -->
+<section class="section" id="menu">
+  <div class="menu-layout">
+    <figure class="shot shot--menu">
+      <img src="assets/shots/menu.png" width="303" height="521"
+           alt="The NotchDown menu bar menu, with sections for Schedule, Run Now, Display and System, and a footer with About and Quit.">
+    </figure>
+
+    <div class="menu-layout__text">
+      <h2>Everything without opening the island.</h2>
+      <p>
+        The menu bar carries the whole app. Schedule any action at any preset
+        through a submenu, run one immediately, or change a setting — then get
+        back to what you were doing.
+      </p>
+
+      <ul class="spec">
+        <li><b>Schedule</b> any of the four actions, 5 minutes to 2 hours, or custom.</li>
+        <li><b>Run now</b> for the times you want the action without a countdown.</li>
+        <li><b>Countdown in the menu bar</b>, so the time left is always on screen.</li>
+        <li><b>Appearance</b> follows the system, or pin it to light or dark.</li>
+        <li><b>Start at login</b>, and a Dock icon if you want one.</li>
+      </ul>
+
+      <p class="kbd-line">
+        Open the island from anywhere with
+        <kbd>Control</kbd><kbd>Shift</kbd><kbd>U</kbd>.
+      </p>
+    </div>
+  </div>
+</section>
+
+<!-- ─────────────────────────── Themes ─────────────────────────── -->
+<section class="section" id="themes">
+  <div class="section__head">
+    <h2>Two themes, both finished.</h2>
+    <p>
+      Light mode is not an afterthought with white text left in it. Every
+      control, label and switch was checked against both backgrounds.
+    </p>
+  </div>
+
+  <div class="themes">
+    <figure class="shot theme-panel theme-panel--light">
+      <img src="assets/shots/about_light.png" width="516" height="432"
+           alt="The About page in light mode, showing settings switches for menu bar countdown, alert sounds, start at login and Dock icon.">
+      <figcaption>Light</figcaption>
+    </figure>
+    <figure class="shot theme-panel theme-panel--dark">
+      <img src="assets/shots/about_dark.png" width="516" height="432"
+           alt="The same About page in dark mode.">
+      <figcaption>Dark</figcaption>
+    </figure>
+  </div>
+</section>
+
+<!-- ─────────────────────────── Install ─────────────────────────── -->
+<section class="section section--install" id="install">
+  <div class="section__head">
+    <h2>Installing it</h2>
+    <p>
+      Two things will happen on first launch that are worth knowing about
+      beforehand, so neither of them looks like something broke.
+    </p>
+  </div>
+
+  <div class="steps">
+    <div class="step">
+      <h3>macOS will refuse to open it the first time</h3>
+      <p>
+        This build is signed but not notarised by Apple, so Gatekeeper blocks it.
+        Right-click the app in your Applications folder and choose <b>Open</b>,
+        then confirm. You only do this once.
+      </p>
+    </div>
+    <div class="step">
+      <h3>It will ask to control System Events</h3>
+      <p>
+        Shutdown, restart and log out are sent through macOS's own automation
+        layer, which needs your permission. Allow it when prompted, or later in
+        System&nbsp;Settings under Privacy&nbsp;&amp;&nbsp;Security, Automation.
+        Sleep works without it.
+      </p>
+    </div>
+    <div class="step">
+      <h3>There is no window and no Dock icon</h3>
+      <p>
+        NotchDown is a menu bar app. After it launches, look for the power icon
+        in the menu bar — that is the whole interface, plus whatever drops out of
+        the notch.
+      </p>
+    </div>
+  </div>
+
+  <a class="download download--secondary" href="https://github.com/festomanolo/notch-down/releases/download/v1.0/NotchDown_v1.0_Installer.dmg" download>
+    Download NotchDown 1.0
+  </a>
+</section>
+
+</main>
+
+<footer class="footer">
+  <p class="footer__mark">NotchDown</p>
+  <p>
+    Built by festomanolo. Works on any Mac running macOS 26.2 or later, with or
+    without a notch — on a Mac without one the island drops from the top of the
+    screen instead.
+  </p>
+  <p class="footer__meta">Version 1.0, universal binary, 2.3&nbsp;MB.</p>
+</footer>
+
+<script src="script.js"></script>
+</body>
+</html>

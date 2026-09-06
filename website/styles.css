@@ -1,0 +1,486 @@
+/* NotchDown — marketing site
+   -------------------------------------------------------------------------
+   The page's top edge stands in for the top of a Mac display: a dark bezel
+   runs across it and the island hangs beneath, the way it does on the machine.
+   That is the one bold move. Everything else stays quiet so the real
+   screenshots carry the page.
+   ------------------------------------------------------------------------- */
+
+:root {
+  --paper:   #eff1f4;
+  --surface: #ffffff;
+  --ink:     #12141a;
+  --muted:   #626873;
+  --rule:    #d9dde3;
+  --night:   #0a0c11;
+
+  /* The app's own urgency ramp. Used only where it carries that meaning. */
+  --blue:  #0a84ff;
+  --amber: #ff9f0a;
+  --red:   #ff453a;
+
+  --bezel-h: 40px;
+
+  --measure: 34rem;
+  --page:    72rem;
+
+  --ui: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+        "Helvetica Neue", Arial, sans-serif;
+  --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+
+html { -webkit-text-size-adjust: 100%; }
+
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--ui);
+  font-size: 17px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+img { max-width: 100%; height: auto; display: block; }
+
+h1, h2, h3 {
+  margin: 0;
+  font-weight: 700;
+  letter-spacing: -0.022em;
+  line-height: 1.1;
+  text-wrap: balance;
+}
+
+p { margin: 0; }
+
+a { color: inherit; }
+
+:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 3px;
+  border-radius: 4px;
+}
+
+/* ── The bezel ─────────────────────────────────────────────────────────── */
+
+.bezel {
+  position: fixed;
+  inset: 0 0 auto 0;
+  height: var(--bezel-h);
+  background: var(--night);
+  z-index: 10;
+}
+
+/* ── Hero ──────────────────────────────────────────────────────────────── */
+
+.hero {
+  padding: var(--bezel-h) 1.5rem 3.5rem;
+  text-align: center;
+}
+
+.hero__stage {
+  display: flex;
+  justify-content: center;
+  /* A small tuck so the island reads as hanging out of the bezel. The app
+     itself leaves an 8pt gap below the notch, so this stays honest. */
+  margin-top: 10px;
+}
+
+.hero__pill {
+  width: 400px;
+  /* No CSS shadow here: the capture is a transparent PNG that already carries
+     the island's own shadow, and stacking a second one showed as a grey blob. */
+}
+
+.hero__copy {
+  max-width: var(--measure);
+  margin: 2.75rem auto 0;
+}
+
+.hero h1 {
+  font-size: clamp(2.4rem, 6.4vw, 3.9rem);
+  letter-spacing: -0.035em;
+}
+
+.lede {
+  margin-top: 1.15rem;
+  font-size: 1.125rem;
+  color: var(--muted);
+  text-wrap: pretty;
+}
+
+/* ── Download button ───────────────────────────────────────────────────── */
+
+.download {
+  display: inline-block;
+  margin-top: 2rem;
+  padding: 0.85rem 1.9rem;
+  background: var(--ink);
+  color: var(--paper);
+  font-size: 1.0625rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  text-decoration: none;
+  border-radius: 999px;
+  transition: background 0.18s ease, transform 0.18s ease;
+}
+
+.download:hover { background: #000; transform: translateY(-1px); }
+.download:active { transform: translateY(0); }
+
+.download--secondary { margin-top: 2.75rem; }
+
+/* ── Fact strip ────────────────────────────────────────────────────────── */
+
+.facts {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 1.25rem 2.25rem;
+  margin: 2.25rem 0 0;
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--rule);
+}
+
+.facts div { text-align: left; white-space: nowrap; }
+
+.facts dt {
+  font-size: 0.75rem;
+  color: var(--muted);
+  letter-spacing: 0.01em;
+}
+
+.facts dd {
+  margin: 0.1rem 0 0;
+  font-family: var(--mono);
+  font-size: 0.9375rem;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Sections ──────────────────────────────────────────────────────────── */
+
+.section {
+  max-width: var(--page);
+  margin: 0 auto;
+  padding: 4rem 1.5rem;
+  border-top: 1px solid var(--rule);
+}
+
+.section__head { max-width: var(--measure); }
+
+.section__head h2 {
+  font-size: clamp(1.75rem, 3.6vw, 2.4rem);
+}
+
+.section__head p {
+  margin-top: 0.9rem;
+  color: var(--muted);
+  text-wrap: pretty;
+}
+
+.section h3 {
+  font-size: 1.0625rem;
+  letter-spacing: -0.012em;
+}
+
+/* ── Screenshots ───────────────────────────────────────────────────────── */
+
+.shot { margin: 0; }
+
+/* Screenshots hang off the same left edge as the headings, so the page keeps
+   one axis instead of alternating between centred and left-aligned blocks. */
+.shot img { margin-inline: 0; }
+
+.shot figcaption {
+  margin-top: 0.9rem;
+  font-size: 0.875rem;
+  color: var(--muted);
+}
+
+.shot--wide { margin-top: 2.5rem; }
+.shot--wide img { width: min(100%, 700px); }
+
+.shot--inline { margin-top: 1.4rem; }
+.shot--inline img { width: min(100%, 560px); }
+
+/* ── Asymmetric pair: screenshot beside prose ──────────────────────────── */
+
+.pair {
+  display: grid;
+  grid-template-columns: 1.3fr 1fr;
+  gap: 3.5rem;
+  align-items: center;
+  margin-top: 3.5rem;
+}
+
+.pair__text > h3 { margin-top: 1.75rem; }
+.pair__text > h3:first-child { margin-top: 0; }
+
+.pair__text p {
+  margin-top: 0.6rem;
+  color: var(--muted);
+}
+
+/* ── Time rail ─────────────────────────────────────────────────────────
+   A genuine sequence: these are the app's real escalation thresholds. */
+
+.rail {
+  list-style: none;
+  margin: 3rem 0 0;
+  padding: 0;
+}
+
+.rail__step {
+  display: grid;
+  grid-template-columns: 7.5rem 1fr;
+  gap: 2rem;
+  padding: 1.75rem 0 2rem;
+  border-top: 1px solid var(--rule);
+}
+
+.rail__time {
+  font-family: var(--mono);
+  font-size: 0.9375rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--blue);
+  padding-top: 0.2rem;
+}
+
+.rail__time--amber { color: var(--amber); }
+
+.rail__body p {
+  margin-top: 0.55rem;
+  max-width: var(--measure);
+  color: var(--muted);
+}
+
+/* ── The dark section: the final ten seconds ───────────────────────────── */
+
+.night {
+  background: var(--night);
+  color: #f0f2f6;
+  padding: 5.5rem 1.5rem 6rem;
+}
+
+.night__inner {
+  max-width: var(--page);
+  margin: 0 auto;
+}
+
+.night__time {
+  font-family: var(--mono);
+  font-size: 0.9375rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--red);
+}
+
+.night h2 {
+  margin-top: 0.75rem;
+  font-size: clamp(1.75rem, 3.6vw, 2.4rem);
+}
+
+.night__lede {
+  margin-top: 1rem;
+  max-width: var(--measure);
+  color: #9aa2b0;
+  text-wrap: pretty;
+}
+
+.shot--night { margin-top: 2.5rem; }
+.shot--night img { width: min(100%, 720px); }
+
+.night__note {
+  margin-top: 2.5rem;
+  max-width: var(--measure);
+  font-size: 0.9375rem;
+  color: #767f8e;
+}
+
+/* ── Menu bar section ──────────────────────────────────────────────────── */
+
+.menu-layout {
+  display: grid;
+  grid-template-columns: 303px 1fr;
+  gap: 4rem;
+  align-items: start;
+}
+
+.shot--menu img {
+  width: 303px;
+  margin-inline: 0;
+  border-radius: 10px;
+  box-shadow: 0 16px 40px rgba(10, 12, 17, 0.16);
+}
+
+.menu-layout__text h2 { font-size: clamp(1.6rem, 3.2vw, 2.1rem); }
+
+.menu-layout__text > p {
+  margin-top: 0.9rem;
+  max-width: var(--measure);
+  color: var(--muted);
+}
+
+.spec {
+  margin: 1.75rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.spec li {
+  padding: 0.7rem 0;
+  border-top: 1px solid var(--rule);
+  color: var(--muted);
+}
+
+.spec b { color: var(--ink); font-weight: 600; }
+
+.kbd-line {
+  margin-top: 1.75rem;
+  font-size: 0.9375rem;
+  color: var(--muted);
+}
+
+kbd {
+  display: inline-block;
+  margin-left: 0.25rem;
+  padding: 0.15rem 0.45rem;
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-bottom-width: 2px;
+  border-radius: 5px;
+  font-family: var(--ui);
+  font-size: 0.8125rem;
+  color: var(--ink);
+}
+
+/* ── Themes ────────────────────────────────────────────────────────────── */
+
+.themes {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.5rem;
+  margin-top: 3rem;
+}
+
+/* Each shot sits on the ground it was designed for, rather than forcing a
+   dark screenshot onto a light card. */
+.theme-panel {
+  padding: 2rem 1.5rem 1.25rem;
+  border-radius: 18px;
+  text-align: center;
+}
+
+.theme-panel img { width: 100%; max-width: 420px; margin-inline: auto; }
+
+.theme-panel--light {
+  background: var(--surface);
+  border: 1px solid var(--rule);
+}
+
+.theme-panel--dark { background: var(--night); }
+.theme-panel--dark figcaption { color: #767f8e; }
+
+/* ── Install ───────────────────────────────────────────────────────────── */
+
+.steps {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 2.5rem;
+  margin-top: 3rem;
+}
+
+.step p {
+  margin-top: 0.6rem;
+  color: var(--muted);
+  font-size: 0.9375rem;
+}
+
+.section--install { padding-bottom: 5.5rem; }
+
+/* ── Footer ────────────────────────────────────────────────────────────── */
+
+.footer {
+  max-width: var(--page);
+  margin: 0 auto;
+  padding: 3rem 1.5rem 5rem;
+  border-top: 1px solid var(--rule);
+  color: var(--muted);
+  font-size: 0.9375rem;
+}
+
+.footer p { max-width: var(--measure); }
+
+.footer__mark {
+  font-family: var(--ui);
+  font-weight: 700;
+  font-size: 1rem;
+  color: var(--ink);
+  letter-spacing: -0.02em;
+  margin-bottom: 0.75rem;
+}
+
+.footer__meta {
+  margin-top: 1rem;
+  font-family: var(--mono);
+  font-size: 0.8125rem;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Responsive ────────────────────────────────────────────────────────── */
+
+@media (max-width: 900px) {
+  .pair,
+  .menu-layout,
+  .themes,
+  .steps { grid-template-columns: 1fr; }
+
+  .pair { gap: 2.5rem; }
+  .menu-layout { gap: 2.5rem; }
+  .steps { gap: 2rem; }
+
+  .shot--menu img { margin-inline: auto; }
+}
+
+@media (max-width: 620px) {
+  body { font-size: 16px; }
+
+  .hero { padding-bottom: 3rem; }
+  .hero__pill { width: min(100%, 300px); }
+  .hero__stage { margin-top: 8px; }
+  .hero__copy { margin-top: 2rem; }
+
+  .section { padding: 3.5rem 1.25rem; }
+  .night { padding: 4rem 1.25rem; }
+
+  .facts { gap: 0 1.5rem; }
+
+  .rail__step {
+    grid-template-columns: 1fr;
+    gap: 0.5rem;
+  }
+}
+
+/* ── Motion ────────────────────────────────────────────────────────────
+   Exactly one orchestrated moment: the island descends on load, the way it
+   does out of the notch. Nothing else animates on its own. */
+
+@media (prefers-reduced-motion: no-preference) {
+  .hero__pill {
+    animation: drop 0.72s cubic-bezier(0.22, 1.12, 0.36, 1) both;
+  }
+
+  @keyframes drop {
+    from { transform: translateY(-46px); opacity: 0; }
+    to   { transform: translateY(0);     opacity: 1; }
+  }
+}
+
+/* Shown only to visitors not on macOS (see script.js). */
+.platform-note {
+  margin-top: 1rem;
+  font-size: 0.875rem;
+  color: var(--amber);
+}

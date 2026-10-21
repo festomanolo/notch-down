@@ -284,6 +284,11 @@ class TimerViewModel: ObservableObject {
     // MARK: - Peeking (Intelligent Visibility) Properties
     private var lastPeekTime: Date = Date()
     private var isPeeking: Bool = false
+    private var peekWorkItem: DispatchWorkItem?
+    /// Mirrors whether a toast is on screen; toasts render inside the island's
+    /// window, so the window must be out for them to be seen at all.
+    private var isToastVisible = false
+    private var toastObserver: AnyCancellable?
 
     // MARK: - Private Properties
     private var timer: Timer?
@@ -406,6 +411,16 @@ class TimerViewModel: ObservableObject {
                 }
             }
         }
+
+        toastObserver = ToastManager.shared.$currentToast
+            .map { $0 != nil }
+            .removeDuplicates()
+            .sink { [weak self] visible in
+                MainActor.assumeIsolated {
+                    self?.isToastVisible = visible
+                    self?.syncIslandVisibility()
+                }
+            }
 
         verifyPermissions()
     }
@@ -539,7 +554,6 @@ class TimerViewModel: ObservableObject {
         currentPowerAction = action
         isActive = true
         lastAudioTriggerSecond = -1
-        lastPeekTime = Date()
 
         updateUrgencyLevel()
 
@@ -550,7 +564,8 @@ class TimerViewModel: ObservableObject {
         }
 
         startTicking()
-        showWindow()
+        // Show the new countdown briefly, then tuck it away until the next peek.
+        triggerPeek()
     }
 
     private static func describe(minutes: Double) -> String {
@@ -602,6 +617,8 @@ class TimerViewModel: ObservableObject {
         timeRemaining = 0
         scheduledAction = nil
         lastAudioTriggerSecond = -1
+        peekWorkItem?.cancel()
+        isPeeking = false
 
         urgencyLevel = .normal
 
@@ -613,10 +630,7 @@ class TimerViewModel: ObservableObject {
 
         if wasActive && !silently {
             ToastManager.shared.info("Timer cancelled")
-            // Only tuck away the pill. Hiding an open island here left
-            // `islandState` at .expanded with the window gone, and expandIsland()
-            // then refused to reopen it.
-            if islandState == .collapsed { hideWindow() }
+            syncIslandVisibility()
         }
     }
 
@@ -654,7 +668,7 @@ class TimerViewModel: ObservableObject {
     private func fireScheduledAction() {
         let actionToExecute = scheduledAction
         cancelTimer(silently: true)
-        hideWindow()
+        defer { syncIslandVisibility() }
 
         guard let action = actionToExecute else { return }
 
@@ -794,18 +808,41 @@ class TimerViewModel: ObservableObject {
         }
     }
 
+    /// Shows the pill for a few seconds. A newer peek replaces an older one's
+    /// timer, so overlapping peeks can no longer hide the island early.
     private func triggerPeek() {
+        peekWorkItem?.cancel()
         isPeeking = true
         lastPeekTime = Date()
+        syncIslandVisibility()
 
-        showWindow()
-
-        DispatchQueue.main.asyncAfter(deadline: .now() + 5.0) { [weak self] in
+        let work = DispatchWorkItem { [weak self] in
             guard let self = self else { return }
-            if self.isActive && self.islandState == .collapsed {
-                self.hideWindow()
-            }
             self.isPeeking = false
+            self.syncIslandVisibility()
+        }
+        peekWorkItem = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 5.0, execute: work)
+    }
+
+    /// The single rule for whether the island is on screen.
+    ///
+    /// Show/hide used to be decided ad hoc at five call sites, which is how the
+    /// pill ended up out for minutes after a timer started, and why toasts
+    /// raised from the menu (e.g. Verify Permissions) rendered in a hidden
+    /// window where nobody could see them.
+    private var shouldShowIsland: Bool {
+        islandState != .collapsed
+            || isPeeking
+            || isToastVisible
+            || (isActive && urgencyLevel != .normal)
+    }
+
+    private func syncIslandVisibility() {
+        if shouldShowIsland {
+            showWindow()
+        } else {
+            hideWindow()
         }
     }
 
@@ -829,10 +866,14 @@ class TimerViewModel: ObservableObject {
             islandState = .collapsed
         }
 
-        DispatchQueue.main.asyncAfter(deadline: .now() + SpringAnimator.morphDuration) { [weak self] in
-            guard let self = self else { return }
-            if !self.isActive && self.islandState == .collapsed {
-                self.hideWindow()
+        // A running countdown lingers as a pill for a moment before tucking
+        // away; otherwise the island leaves once the morph has settled.
+        if isActive {
+            triggerPeek()
+        } else {
+            DispatchQueue.main.asyncAfter(deadline: .now() + SpringAnimator.morphDuration) { [weak self] in
+                guard let self = self, self.islandState == .collapsed else { return }
+                self.syncIslandVisibility()
             }
         }
     }

@@ -79,7 +79,7 @@ enum MorphingGeometry {
     /// The window is sized to this once and never resized, so the island can
     /// morph freely inside it without dragging AppKit's layout engine along.
     static var largestStateSize: CGSize {
-        let worstCase = ContentContext(isTimerActive: true, showsPermissionWarning: true)
+        let worstCase = ContentContext(isTimerActive: true, showsPermissionWarning: true, showsUrgencyNotice: true)
 
         return IslandState.allCases.reduce(CGSize.zero) { partial, state in
             let plain = calculateFrame(for: state)

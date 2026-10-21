@@ -310,6 +310,9 @@ class TimerViewModel: ObservableObject {
     private var batteryObserver: AnyCancellable?
     private var collapseObserver: NSObjectProtocol?
     private var shortcutObserver: NSObjectProtocol?
+    #if DEBUG
+    private var debugObserver: NSObjectProtocol?
+    #endif
 
     /// Suppresses `didSet` side effects while persisted values are being loaded.
     private var isLoadingSettings = false
@@ -439,6 +442,10 @@ class TimerViewModel: ObservableObject {
             }
 
         verifyPermissions()
+
+        #if DEBUG
+        debugObserver = installDebugCommands()
+        #endif
     }
 
     deinit {

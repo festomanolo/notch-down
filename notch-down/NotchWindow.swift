@@ -298,6 +298,7 @@ class NotchPanel: NSPanel {
         // appearance. Left to the system, a light island on a dark Mac got dark
         // frosted materials and dimmed controls underneath its light tint.
         themeObserver = ThemeManager.shared.$currentTheme
+            .receive(on: RunLoop.main)
     }
 
     override var canBecomeKey: Bool { true }

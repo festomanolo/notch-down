@@ -146,15 +146,15 @@ Use `Shift + Control + U` to toggle the Dynamic Island at any time.
 - **DynamicIslandView.swift**: Main UI with glassmorphism design
 - **DiagnosticsManager.swift**: System testing and verification
 - **ToastManager.swift**: User feedback notification system
-- **ErrorHandler.swift**: Comprehensive error management
 - **BatteryManager.swift**: Battery monitoring and intelligence
 - **ThemeManager.swift**: Theme switching and persistence
 
 ### Key Managers
 - **ShortcutManager**: Global hotkey registration (Carbon API)
-- **SpringAnimator**: Custom physics-based animations
+- **SpringAnimator**: The island's spring/motion vocabulary
 - **MorphingGeometry**: Dynamic Island size calculations
-- **AnimationFallbackManager**: Performance-adaptive animations
+- **AnimationFallbackManager**: Reduce Motion–aware animation selection
+- **UpdateChecker**: GitHub release lookup for Check Updates
 
 ---
 
@@ -171,7 +171,15 @@ Every interaction in NotchDown is designed to feel premium. We use:
 
 ## Version History
 
-### v1.1 (Current)
+### v1.2 (Current)
+- Smoother, direction-aware island morph with blur-faded content
+- Progress ring in the pill, draining progress bar and urgency glow
+- Interactive swipe gestures with trackpad haptics
+- Click outside or press Esc to close the island
+- Real update checking and a readable diagnostics report
+- Many bug fixes (theme persistence, light mode contrast, toasts, long-press, battery suggestion)
+
+### v1.1
 - Fixed sleep and logout commands
 - Added comprehensive error handling
 - Implemented toast notification system

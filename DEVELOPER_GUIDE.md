@@ -30,7 +30,6 @@ NotchDown follows a clean MVVM architecture with specialized managers for differ
 
 #### Core Application
 - **NotchDownApp.swift**: Main app entry, TimerViewModel, business logic
-- **ContentView.swift**: Unused placeholder (app uses MenuBarExtra)
 
 #### Power Management
 - **PowerManager.swift**: 
@@ -50,35 +49,34 @@ NotchDown follows a clean MVVM architecture with specialized managers for differ
 #### Window Management
 - **NotchWindow.swift**: Custom NSPanel for floating window
   - Handles window positioning near notch
-  - Morphing animations
-  - Click-outside detection
+  - Fixed-size window; SwiftUI animates the island inside it
+  - Click-outside and Esc detection
   - Toast overlay integration
 
 #### State Management
 - **DynamicIslandModels.swift**: Enums and data models
-  - IslandState (collapsed, expanded, critical, etc.)
-  - AnimationPhase (idle, morphing, rolling, etc.)
+  - IslandState (collapsed, expanded, critical, about)
   - UrgencyLevel (normal, warning, critical)
-  - TimeOption (preset time selections)
   - AppTheme (dark, light)
 
 #### Managers
 - **BatteryManager.swift**: IOKit-based battery monitoring
 - **ThemeManager.swift**: Theme persistence and switching
 - **ShortcutManager.swift**: Global hotkey registration (Carbon API)
-- **ErrorHandler.swift**: System sleep/wake handling, error management
+- **UpdateChecker.swift**: GitHub release lookup
+- **Haptics.swift**: Trackpad feedback for gestures
+- **DebugCommands.swift**: Debug-only command channel (see Testing)
 - **DiagnosticsManager.swift**: System testing and verification
 - **ToastManager.swift**: User feedback notifications
 
 #### Animation System
-- **SpringAnimator.swift**: Custom spring physics calculations
+- **SpringAnimator.swift**: Spring/motion vocabulary
 - **MorphingGeometry.swift**: Dynamic Island size calculations
-- **AnimationFallbackManager.swift**: Performance-adaptive animations
+- **AnimationFallbackManager.swift**: Reduce Motion handling
 
 #### UI Components
 - **ModernButton.swift**: Reusable button component
 - **CountdownDisplay.swift**: Timer display component
-- **IslandBackground.swift**: Glassmorphism background
 
 ### Power Action Execution Flow
 
@@ -300,7 +298,7 @@ PowerManager.shared.verifyPermissions { hasPermission in
 **Solution**: Check automation permissions for System Events
 
 **Issue**: Timer state lost after sleep
-**Solution**: ErrorHandler backs up and restores state automatically
+**Solution**: The countdown is derived from a wall-clock deadline, so it is recomputed on wake (and fires immediately if the deadline passed)
 
 **Issue**: Toast notifications not showing
 **Solution**: Verify ToastContainerView is in NotchPanel overlay
@@ -328,3 +326,14 @@ PowerManager.shared.verifyPermissions { hasPermission in
 
 **Last Updated**: v1.1.0  
 **Maintainer**: festomanolo
+
+## Testing without powering anything off
+
+Debug builds accept `-NotchDownDryRun YES`. In that mode a countdown reaching
+zero only shows a "Dry run" toast — nothing is shut down, restarted, slept or
+logged out. Debug builds also listen for the distributed notification
+`manolo.notch-down.debug` with a `command` string in `userInfo`
+(`expand`, `collapse`, `about`, `back`, `custom`, `snooze`, `cancel`, `toggle`,
+`light`, `dark`, `toast:<text>`, `start:<seconds>:<action>`), which lets UI states
+be driven and screenshotted from the command line. `start` is refused unless
+dry-run is on. None of this is compiled into Release builds.

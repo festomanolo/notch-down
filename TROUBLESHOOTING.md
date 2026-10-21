@@ -293,14 +293,13 @@ This will identify most common issues automatically.
 
 **Solutions**:
 1. **Normal Behavior**:
-   - App attempts to restore timer state
-   - If Mac slept longer than timer, it's cancelled
+   - The countdown is based on a wall-clock deadline and is recomputed on wake
+   - If the deadline passed while the Mac slept, the action runs on wake
    - This is expected behavior
 
-2. **Check Error Handler**:
-   - ErrorHandler backs up state before sleep
-   - Restores on wake if time remaining
-   - Check console for restoration messages
+2. **Check the menu bar countdown**:
+   - It should show the correct remaining time right after wake
+   - If not, run Troubleshooting › Run Diagnostics… and share the report
 
 3. **Avoid System Sleep**:
    - Don't manually sleep Mac while timer active

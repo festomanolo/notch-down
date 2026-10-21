@@ -1065,18 +1065,32 @@ class TimerViewModel: ObservableObject {
     }
 
     func runDiagnostics() {
-        DiagnosticsManager.shared.runDiagnostics { [weak self] in
-            guard self != nil else { return }
+        DiagnosticsManager.shared.runDiagnostics {
             let report = DiagnosticsManager.shared.generateReport()
-            print(report)
+            let failures = DiagnosticsManager.shared.diagnosticResults.filter { $0.status == .failed }.count
 
+            // The report used to go to stdout only, where no user would ever see it.
             NSApp.activate(ignoringOtherApps: true)
             let alert = NSAlert()
-            alert.messageText = "Diagnostics Complete"
-            alert.informativeText = "Full report printed to the console. Export it from the About page for sharing."
-            alert.alertStyle = .informational
+            alert.messageText = failures == 0 ? "All Checks Passed" : "\(failures) Check\(failures == 1 ? "" : "s") Failed"
+            alert.informativeText = report
+            alert.alertStyle = failures == 0 ? .informational : .warning
             alert.addButton(withTitle: "OK")
-            alert.runModal()
+            alert.addButton(withTitle: "Copy Report")
+            alert.addButton(withTitle: "Save…")
+
+            switch alert.runModal() {
+            case .alertSecondButtonReturn:
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(report, forType: .string)
+                ToastManager.shared.success("Diagnostics copied to clipboard")
+            case .alertThirdButtonReturn:
+                DiagnosticsManager.shared.exportReport { url in
+                    if url != nil { ToastManager.shared.success("Diagnostics saved") }
+                }
+            default:
+                break
+            }
         }
     }
 

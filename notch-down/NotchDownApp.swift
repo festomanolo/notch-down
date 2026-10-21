@@ -323,6 +323,8 @@ class TimerViewModel: ObservableObject {
     // About Page State
     @Published var isCheckingForUpdates = false
     @Published var updateStatusMessage = ""
+    /// Release page for a newer version, once a check has found one.
+    @Published var availableUpdateURL: URL?
 
     // Permission State
     @Published var hasPermissions = true
@@ -1054,13 +1056,30 @@ class TimerViewModel: ObservableObject {
 
     // MARK: - Updates & Diagnostics
 
+    /// Asks GitHub for the latest release. This used to wait two seconds and
+    /// then report "latest version (1.0.0)" unconditionally.
     func handleCheckForUpdates() {
+        guard !isCheckingForUpdates else { return }
+
         isCheckingForUpdates = true
         updateStatusMessage = "Checking for updates…"
 
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self] in
-            self?.isCheckingForUpdates = false
-            self?.updateStatusMessage = "You are on the latest version (1.0.0)"
+        Task {
+            let outcome = await UpdateChecker.check()
+            isCheckingForUpdates = false
+
+            withAnimation(SpringAnimator.contentSwap()) {
+                switch outcome {
+                case .upToDate(let current):
+                    availableUpdateURL = nil
+                    updateStatusMessage = "NotchDown \(current) is the latest version"
+                case .available(let release):
+                    availableUpdateURL = release.pageURL
+                    updateStatusMessage = "Version \(release.version) is available"
+                case .failed(let reason):
+                    updateStatusMessage = reason
+                }
+            }
         }
     }
 

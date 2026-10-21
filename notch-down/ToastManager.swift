@@ -169,6 +169,7 @@ struct ToastContainerView: View {
                 // for ~0.6s, longer than the island takes to order its window
                 // out, which froze the removal half-way and resurrected the
                 // stale toast the next time the island opened.
+                .transition(.asymmetric(
                 .transition(.move(edge: .top).combined(with: .opacity))
                 // Reported so the dismiss button is inside the window's
                 // interactive region, which otherwise covers only the island.

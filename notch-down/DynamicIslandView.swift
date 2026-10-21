@@ -573,7 +573,7 @@ struct TimerSelectionView: View {
                             color: .blue,
                             isSelected: viewModel.showingCustomInput
                         ) {
-                            withAnimation(.spring(response: 0.4, dampingFraction: 0.7)) {
+                            withAnimation(AnimationFallbackManager.shared.getAnimation(for: .morphing)) {
                                 viewModel.showingCustomInput = true
                             }
                         }
@@ -761,7 +761,7 @@ struct CustomTimeInputView: View {
                 Spacer(minLength: 4)
 
                 Button {
-                    withAnimation(.spring(response: 0.4, dampingFraction: 0.7)) {
+                    withAnimation(AnimationFallbackManager.shared.getAnimation(for: .morphing)) {
                         viewModel.showingCustomInput = false
                     }
                 } label: {

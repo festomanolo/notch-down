@@ -908,13 +908,13 @@ class TimerViewModel: ObservableObject {
         updateActiveScreen()
         showWindow(activating: true)
 
-        withAnimation(.spring(response: 0.5, dampingFraction: 0.8)) {
+        withAnimation(AnimationFallbackManager.shared.getAnimation(for: .morphing)) {
             islandState = .about
         }
     }
 
     func returnFromAboutPage() {
-        withAnimation(.spring(response: 0.4, dampingFraction: 0.82)) {
+        withAnimation(AnimationFallbackManager.shared.getAnimation(for: .morphing)) {
             islandState = .expanded
         }
     }
@@ -928,7 +928,7 @@ class TimerViewModel: ObservableObject {
             expandIsland()
         } else {
             showWindow(activating: true)
-            withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
+            withAnimation(AnimationFallbackManager.shared.getAnimation(for: .morphing)) {
                 islandState = .expanded
             }
         }
@@ -1054,7 +1054,7 @@ class TimerViewModel: ObservableObject {
 
         guard !isIslandVisible else { return }
 
-        withAnimation(.spring(response: 0.45, dampingFraction: 0.78)) {
+        withAnimation(SpringAnimator.presence(true)) {
             isIslandVisible = true
         }
     }
@@ -1062,7 +1062,7 @@ class TimerViewModel: ObservableObject {
     private func hideWindow() {
         guard isIslandVisible else { return }
 
-        withAnimation(.spring(response: 0.35, dampingFraction: 0.9)) {
+        withAnimation(SpringAnimator.presence(false)) {
             isIslandVisible = false
         }
 

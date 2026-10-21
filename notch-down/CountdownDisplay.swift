@@ -154,7 +154,7 @@ struct CountdownDisplay: View {
 
     // MARK: - Computed Properties
 
-    private var totalSeconds: Int { max(0, Int(viewModel.timeRemaining.rounded())) }
+    private var totalSeconds: Int { viewModel.secondsRemaining }
     private var hours: Int { totalSeconds / 3600 }
     private var minutes: Int { hours > 0 ? (totalSeconds % 3600) / 60 : totalSeconds / 60 }
     private var seconds: Int { totalSeconds % 60 }

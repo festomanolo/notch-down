@@ -497,8 +497,15 @@ class TimerViewModel: ObservableObject {
 
     // MARK: - Formatting
 
+    /// Whole seconds left, rounded up — the way every countdown reads: "0:01"
+    /// stays on screen until the action actually fires. Display, urgency and
+    /// alerts all use this one value so they can never disagree.
+    var secondsRemaining: Int {
+        max(0, Int(timeRemaining.rounded(.up)))
+    }
+
     var timeString: String {
-        let total = max(0, Int(timeRemaining.rounded()))
+        let total = secondsRemaining
         let hours = total / 3600
         let minutes = (total % 3600) / 60
         let seconds = total % 60
@@ -549,11 +556,23 @@ class TimerViewModel: ObservableObject {
         return parts.isEmpty ? "0s" : parts.joined(separator: " ")
     }
 
+    /// Ticks once a second, phase-locked to just after each whole-second
+    /// boundary of the deadline.
+    ///
+    /// The previous free-running 0.5s timer landed *exactly* on the
+    /// boundaries, so floating-point noise decided whether each digit changed
+    /// on time or half a second late, and the roller limped.
     private func startTicking() {
         timer?.invalidate()
-        let timer = Timer(timeInterval: 0.5, repeats: true) { [weak self] _ in
+        guard let deadline = deadline else { return }
+
+        let phase = max(0, deadline.timeIntervalSinceNow).truncatingRemainder(dividingBy: 1)
+        let firstFire = Date().addingTimeInterval(phase + 0.02)
+
+        let timer = Timer(fire: firstFire, interval: 1, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.tick() }
         }
+        timer.tolerance = 0.01
         // .common so the countdown keeps running while a menu is open.
         RunLoop.main.add(timer, forMode: .common)
         self.timer = timer
@@ -602,10 +621,10 @@ class TimerViewModel: ObservableObject {
 
         let remaining = max(0, deadline.timeIntervalSinceNow)
 
-        // Only publish on whole-second boundaries so the roller animates once
-        // per second instead of stuttering twice.
+        // Only publish on whole-second boundaries so the roller animates
+        // exactly once per second.
         let newWhole = Int(remaining.rounded(.up))
-        let oldWhole = Int(timeRemaining.rounded(.up))
+        let oldWhole = secondsRemaining
 
         if remaining <= 0 {
             timeRemaining = 0
@@ -719,8 +738,9 @@ class TimerViewModel: ObservableObject {
     func snoozeTimer() {
         guard isActive, let current = deadline else { return }
 
-        deadline = current.addingTimeInterval(300)
-        timeRemaining = max(0, self.deadline!.timeIntervalSinceNow)
+        let extended = current.addingTimeInterval(300)
+        deadline = extended
+        timeRemaining = max(0, extended.timeIntervalSinceNow)
         lastAudioTriggerSecond = -1
         updateUrgencyLevel()
 
@@ -845,9 +865,9 @@ class TimerViewModel: ObservableObject {
     /// on the same window at exactly T-60s and T-10s.
     func updateUrgencyLevel() {
         let newUrgencyLevel: UrgencyLevel
-        if timeRemaining <= 10 {
+        if secondsRemaining <= 10 {
             newUrgencyLevel = .critical
-        } else if timeRemaining <= 60 {
+        } else if secondsRemaining <= 60 {
             newUrgencyLevel = .warning
         } else {
             newUrgencyLevel = .normal

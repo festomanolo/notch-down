@@ -53,6 +53,12 @@ struct CountdownDisplay: View {
             separator
             digitSlot(text: secondsText, label: "SEC", value: seconds)
         }
+        // Last ten seconds: the digits give a small heartbeat on every tick.
+        .phaseAnimator(heartbeatPhases, trigger: viewModel.secondsRemaining) { digits, scale in
+            digits.scaleEffect(scale)
+        } animation: { scale in
+            scale > 1 ? .easeOut(duration: 0.09) : .spring(duration: 0.35, bounce: 0.4)
+        }
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
         .background(
@@ -64,6 +70,26 @@ struct CountdownDisplay: View {
                     .stroke(urgencyTint.opacity(0.28), lineWidth: 1)
             }
         )
+        // Time left, draining continuously along the bottom of the well.
+        .overlay(alignment: .bottom) {
+            GeometryReader { proxy in
+                ZStack(alignment: .leading) {
+                    Capsule().fill(urgencyTint.opacity(0.15))
+                    Capsule()
+                        .fill(urgencyTint)
+                        .frame(width: proxy.size.width * viewModel.progress)
+                        .shadow(color: urgencyTint.opacity(0.6), radius: 3)
+                }
+            }
+            .frame(height: 3)
+            .padding(.horizontal, 22)
+            .padding(.bottom, 4)
+            .animation(.linear(duration: 1), value: viewModel.progress)
+        }
+    }
+
+    private var heartbeatPhases: [CGFloat] {
+        viewModel.urgencyLevel == .critical ? [1, 1.07, 1] : [1]
     }
 
     private var separator: some View {
@@ -206,9 +232,12 @@ struct CompactCountdownDisplay: View {
 
     var body: some View {
         HStack(spacing: 6) {
-            Image(systemName: actionIconName)
-                .font(.system(size: 11, weight: .bold))
-                .foregroundColor(urgencyColor)
+            ProgressRing(progress: viewModel.progress, color: urgencyColor, lineWidth: 2.2) {
+                Image(systemName: actionIconName)
+                    .font(.system(size: 7.5, weight: .heavy))
+                    .foregroundColor(urgencyColor)
+            }
+            .frame(width: 17, height: 17)
 
             Text(actionDisplayName)
                 .font(.system(size: fontSize * 0.92, weight: .bold, design: .rounded))
@@ -257,6 +286,34 @@ struct CompactCountdownDisplay: View {
             return 12
         case .expanded, .critical, .about:
             return 14
+        }
+    }
+}
+
+// MARK: - Progress Ring
+
+/// Circular time-remaining indicator, like the system timer's Live Activity.
+///
+/// Animated linearly over each one-second tick, so consecutive ticks chain into
+/// one continuous drain rather than a series of hops.
+struct ProgressRing<Center: View>: View {
+    let progress: Double
+    let color: Color
+    var lineWidth: CGFloat = 2.5
+    @ViewBuilder var center: () -> Center
+
+    var body: some View {
+        ZStack {
+            Circle()
+                .stroke(color.opacity(0.22), lineWidth: lineWidth)
+
+            Circle()
+                .trim(from: 0, to: progress)
+                .stroke(color, style: StrokeStyle(lineWidth: lineWidth, lineCap: .round))
+                .rotationEffect(.degrees(-90))
+                .animation(.linear(duration: 1), value: progress)
+
+            center()
         }
     }
 }

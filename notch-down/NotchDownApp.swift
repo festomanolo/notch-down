@@ -379,13 +379,18 @@ class TimerViewModel: ObservableObject {
                 self.followsSystemTheme = ThemeManager.shared.followsSystemTheme
             }
 
-        // Observe collapse notifications (for click-outside)
+        // Outside click / Esc. The urgency pop-out is left alone — it exists to
+        // stay in view while the user carries on working elsewhere.
         collapseObserver = NotificationCenter.default.addObserver(
-            forName: Notification.Name("CollapseDynamicIsland"),
+            forName: .collapseDynamicIsland,
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            MainActor.assumeIsolated { self?.collapseIsland() }
+            MainActor.assumeIsolated {
+                guard let self = self,
+                      self.islandState == .expanded || self.islandState == .about else { return }
+                self.collapseIsland()
+            }
         }
 
         setupSystemObservers()

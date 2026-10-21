@@ -41,6 +41,8 @@ class ShortcutManager {
 
 extension Notification.Name {
     static let expandDynamicIsland = Notification.Name("expandDynamicIsland")
+    /// Posted for an outside click or Esc; collapses an open island.
+    static let collapseDynamicIsland = Notification.Name("collapseDynamicIsland")
 }
 
 /// Helper function to create OSType from String

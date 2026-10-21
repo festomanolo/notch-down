@@ -47,11 +47,42 @@ final class IslandHitRegion {
 class NotchWindowController: NSWindowController {
 
     private var isPresented = false
+    private var outsideClickMonitor: Any?
+    private var escapeKeyMonitor: Any?
 
     convenience init(rootView: AnyView) {
         let window = NotchPanel(rootView: rootView)
         self.init(window: window)
         reposition()
+        installDismissMonitors()
+    }
+
+    /// Native popover behaviour: a click anywhere outside the island, or Esc,
+    /// asks it to collapse.
+    ///
+    /// The global monitor sees clicks delivered to *other* apps — which
+    /// includes clicks in this window's transparent margin, since hit testing
+    /// passes those through. Clicks on the island itself, its menus and the
+    /// status item are local events and never reach it.
+    private func installDismissMonitors() {
+        outsideClickMonitor = NSEvent.addGlobalMonitorForEvents(
+            matching: [.leftMouseDown, .rightMouseDown]
+        ) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard self?.isPresented == true else { return }
+                NotificationCenter.default.post(name: .collapseDynamicIsland, object: nil)
+            }
+        }
+
+        escapeKeyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            guard event.keyCode == 53 else { return event } // Esc
+            let handled = MainActor.assumeIsolated { () -> Bool in
+                guard let window = self?.window, window.isKeyWindow else { return false }
+                NotificationCenter.default.post(name: .collapseDynamicIsland, object: nil)
+                return true
+            }
+            return handled ? nil : event
+        }
     }
 
     // MARK: - Geometry

@@ -299,6 +299,7 @@ class NotchPanel: NSPanel {
         // frosted materials and dimmed controls underneath its light tint.
         themeObserver = ThemeManager.shared.$currentTheme
             .receive(on: RunLoop.main)
+            .sink { [weak self] theme in
     }
 
     override var canBecomeKey: Bool { true }

@@ -804,7 +804,7 @@ struct AboutView: View {
                     .font(.system(size: 12, weight: .medium, design: .rounded))
                     .foregroundColor(theme.secondaryTextColor)
 
-                Text("NotchDown v1.0.0")
+                Text("NotchDown \(UpdateChecker.currentVersion)")
                     .font(.system(size: 11, weight: .bold, design: .monospaced))
                     .padding(.horizontal, 8)
                     .padding(.vertical, 4)
@@ -819,18 +819,32 @@ struct AboutView: View {
 
     private var actionButtons: some View {
         HStack(spacing: 8) {
-            Button {
-                viewModel.handleCheckForUpdates()
-            } label: {
-                capsuleLabel(
-                    text: viewModel.isCheckingForUpdates ? "Checking…" : "Check Updates",
-                    systemImage: "arrow.clockwise.circle",
-                    showsProgress: viewModel.isCheckingForUpdates,
-                    tint: .blue
-                )
+            if let url = viewModel.availableUpdateURL {
+                Button {
+                    NSWorkspace.shared.open(url)
+                } label: {
+                    capsuleLabel(
+                        text: "Download Update",
+                        systemImage: "arrow.down.circle",
+                        showsProgress: false,
+                        tint: .blue
+                    )
+                }
+                .buttonStyle(PlainButtonStyle())
+            } else {
+                Button {
+                    viewModel.handleCheckForUpdates()
+                } label: {
+                    capsuleLabel(
+                        text: viewModel.isCheckingForUpdates ? "Checking…" : "Check Updates",
+                        systemImage: "arrow.clockwise.circle",
+                        showsProgress: viewModel.isCheckingForUpdates,
+                        tint: .blue
+                    )
+                }
+                .buttonStyle(PlainButtonStyle())
+                .disabled(viewModel.isCheckingForUpdates)
             }
-            .buttonStyle(PlainButtonStyle())
-            .disabled(viewModel.isCheckingForUpdates)
 
             Button {
                 viewModel.runDiagnostics()

@@ -443,6 +443,16 @@ class TimerViewModel: ObservableObject {
 
         // Reflect the real login-item state rather than assuming false.
         startAtLogin = SMAppService.mainApp.status == .enabled
+
+        // `didSet` is suppressed while loading, so a saved "show Dock icon"
+        // was persisted but never applied on the next launch. Deferred until
+        // NSApp has finished launching.
+        if showInDock {
+            DispatchQueue.main.async { [weak self] in
+                guard let self = self else { return }
+                self.toggleDockIcon(self.showInDock)
+            }
+        }
     }
 
     // MARK: - System Observers

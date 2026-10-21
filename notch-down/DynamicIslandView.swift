@@ -230,7 +230,8 @@ struct DynamicIslandView: View {
                 isTimerActive: viewModel.isActive,
                 isShowingSuggestion: viewModel.isShowingSuggestion,
                 isShowingCustomInput: viewModel.showingCustomInput,
-                showsPermissionWarning: viewModel.showPermissionWarning
+                showsPermissionWarning: viewModel.showPermissionWarning,
+                showsUrgencyNotice: viewModel.isActive && viewModel.urgencyLevel != .normal
             )
         )
     }

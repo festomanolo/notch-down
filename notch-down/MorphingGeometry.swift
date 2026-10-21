@@ -31,6 +31,8 @@ enum MorphingGeometry {
         var isShowingSuggestion = false
         var isShowingCustomInput = false
         var showsPermissionWarning = false
+        /// The "less than a minute" banner under a running countdown.
+        var showsUrgencyNotice = false
 
         static let empty = ContentContext()
     }
@@ -57,7 +59,9 @@ enum MorphingGeometry {
             if content.isShowingSuggestion {
                 size.height = 178
             } else if content.isTimerActive {
-                size.height = state == .critical ? 246 : 234
+                size.height = 234
+                if state == .critical { size.height += 8 }       // larger digit slots
+                if content.showsUrgencyNotice { size.height += 36 }
             } else if content.isShowingCustomInput {
                 size.height = 178
             } else {
@@ -75,7 +79,7 @@ enum MorphingGeometry {
     /// The window is sized to this once and never resized, so the island can
     /// morph freely inside it without dragging AppKit's layout engine along.
     static var largestStateSize: CGSize {
-        let worstCase = ContentContext(isTimerActive: true, showsPermissionWarning: true)
+        let worstCase = ContentContext(isTimerActive: true, showsPermissionWarning: true, showsUrgencyNotice: true)
 
         return IslandState.allCases.reduce(CGSize.zero) { partial, state in
             let plain = calculateFrame(for: state)

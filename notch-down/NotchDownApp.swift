@@ -431,9 +431,14 @@ class TimerViewModel: ObservableObject {
             }
         }
 
+        // Delivered a run-loop turn later on purpose. `$currentToast` emits in
+        // willSet; changing island state synchronously from there made SwiftUI
+        // render while the old toast was still current, so every toast showed
+        // up one update late (and lingered after it was dismissed).
         toastObserver = ToastManager.shared.$currentToast
             .map { $0 != nil }
             .removeDuplicates()
+            .receive(on: RunLoop.main)
             .sink { [weak self] visible in
                 MainActor.assumeIsolated {
                     self?.isToastVisible = visible

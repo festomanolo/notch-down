@@ -165,12 +165,21 @@ struct ToastContainerView: View {
                 ToastView(toast: toast, theme: themeManager.currentTheme) {
                     toastManager.dismiss()
                 }
-                .transition(.move(edge: .top).combined(with: .opacity))
+                // The exit uses a fixed-length curve. A spring keeps settling
+                // for ~0.6s, longer than the island takes to order its window
+                // out, which froze the removal half-way and resurrected the
+                // stale toast the next time the island opened.
+                .transition(.asymmetric(
+                    insertion: .move(edge: .top).combined(with: .opacity)
+                        .animation(.spring(duration: 0.4, bounce: 0.2)),
+                    removal: .opacity.combined(with: .scale(scale: 0.96, anchor: .top))
+                        .animation(.easeOut(duration: 0.18))
+                ))
                 // Reported so the dismiss button is inside the window's
                 // interactive region, which otherwise covers only the island.
                 .reportsIslandHitRegion()
             }
         }
-        .animation(.spring(response: 0.4, dampingFraction: 0.85), value: toastManager.currentToast)
+        .animation(.spring(duration: 0.4, bounce: 0.2), value: toastManager.currentToast)
     }
 }

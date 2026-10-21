@@ -118,24 +118,23 @@ class ThemeManager: ObservableObject {
         userDefaults.set(followsSystemTheme, forKey: followsSystemKey)
     }
     
-    /// Loads theme preference from UserDefaults
+    /// Loads theme preference from UserDefaults.
+    ///
+    /// Both values are read *before* either is assigned: each property's
+    /// `didSet` saves both, so assigning `followsSystemTheme` first overwrote
+    /// the stored theme with the default and the chosen theme never survived
+    /// a relaunch.
     private func loadThemePreference() {
-        // Load system theme following preference
-        if userDefaults.object(forKey: followsSystemKey) != nil {
-            followsSystemTheme = userDefaults.bool(forKey: followsSystemKey)
-        }
-        
-        // Load theme preference
-        if let themeString = userDefaults.string(forKey: themeKey) {
-            currentTheme = themeString == "dark" ? .dark : .light
+        let storedFollows = userDefaults.object(forKey: followsSystemKey) as? Bool
+        let storedTheme = userDefaults.string(forKey: themeKey)
+
+        if let storedTheme = storedTheme {
+            currentTheme = storedTheme == "dark" ? .dark : .light
         } else {
-            // Default to system theme
             currentTheme = detectSystemTheme()
         }
-        
-        // If following system theme, update from system
-        if followsSystemTheme {
-            updateFromSystemTheme()
-        }
+
+        // Assigning this also applies the system theme when following it.
+        followsSystemTheme = storedFollows ?? true
     }
 }

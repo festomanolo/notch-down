@@ -172,6 +172,7 @@ struct ToastContainerView: View {
                 .transition(.asymmetric(
                     insertion: .move(edge: .top).combined(with: .opacity)
                         .animation(.spring(duration: 0.4, bounce: 0.2)),
+                    removal: .opacity.combined(with: .scale(scale: 0.96, anchor: .top))
                 .transition(.move(edge: .top).combined(with: .opacity))
                 // Reported so the dismiss button is inside the window's
                 // interactive region, which otherwise covers only the island.

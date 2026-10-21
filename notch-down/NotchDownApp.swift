@@ -879,6 +879,13 @@ class TimerViewModel: ObservableObject {
             urgencyLevel = newUrgencyLevel
         }
 
+        // Snoozed back out of the last minute: drop the oversized alert layout.
+        if newUrgencyLevel == .normal && islandState == .critical {
+            withAnimation(AnimationFallbackManager.shared.getAnimation(for: .morphing)) {
+                islandState = .expanded
+            }
+        }
+
         guard newUrgencyLevel == .warning || newUrgencyLevel == .critical else { return }
 
         DispatchQueue.main.async { [weak self] in

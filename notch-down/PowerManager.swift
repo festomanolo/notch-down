@@ -125,8 +125,8 @@ class PowerManager: ObservableObject {
         // `-NotchDownDryRun YES` on the command line: exercise every countdown
         // and UI path without ever touching the machine's power state.
         if UserDefaults.standard.bool(forKey: "NotchDownDryRun") {
+            // No completion: its "command sent" toast would hide this one.
             ToastManager.shared.warning("Dry run — would \(action.presentVerb) now")
-            completion?(.success(()))
             return
         }
         #endif

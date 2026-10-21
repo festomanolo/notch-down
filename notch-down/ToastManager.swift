@@ -180,6 +180,6 @@ struct ToastContainerView: View {
                 .reportsIslandHitRegion()
             }
         }
-        .animation(.spring(response: 0.4, dampingFraction: 0.85), value: toastManager.currentToast)
+        .animation(.spring(duration: 0.4, bounce: 0.2), value: toastManager.currentToast)
     }
 }

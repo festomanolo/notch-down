@@ -293,6 +293,7 @@ class NotchPanel: NSPanel {
         self.becomesKeyOnlyIfNeeded = true
         self.hidesOnDeactivate = false
         self.animationBehavior = .none
+
     }
 
     override var canBecomeKey: Bool { true }

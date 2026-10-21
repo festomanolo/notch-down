@@ -300,6 +300,7 @@ class NotchPanel: NSPanel {
         themeObserver = ThemeManager.shared.$currentTheme
             .receive(on: RunLoop.main)
             .sink { [weak self] theme in
+                self?.appearance = NSAppearance(named: theme == .dark ? .darkAqua : .aqua)
     }
 
     override var canBecomeKey: Bool { true }

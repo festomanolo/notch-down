@@ -31,6 +31,8 @@ enum MorphingGeometry {
         var isShowingSuggestion = false
         var isShowingCustomInput = false
         var showsPermissionWarning = false
+        /// The "less than a minute" banner under a running countdown.
+        var showsUrgencyNotice = false
 
         static let empty = ContentContext()
     }

@@ -282,9 +282,4 @@ class PowerManager: ObservableObject {
             NSWorkspace.shared.open(url)
         }
     }
-
-    /// Test whether an action would be permitted, without executing it.
-    func testAction(_ action: PowerAction, completion: @escaping (Bool) -> Void) {
-        verifyPermissions(completion: completion)
-    }
 }

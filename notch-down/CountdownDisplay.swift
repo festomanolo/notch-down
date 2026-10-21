@@ -200,7 +200,7 @@ struct CountdownDisplay: View {
 
 // MARK: - Compact Countdown Display
 
-/// Compact version of countdown display for collapsed and expanding states
+/// Compact countdown shown in the collapsed pill
 struct CompactCountdownDisplay: View {
     @ObservedObject var viewModel: TimerViewModel
 
@@ -253,10 +253,8 @@ struct CompactCountdownDisplay: View {
 
     private var fontSize: CGFloat {
         switch viewModel.islandState {
-        case .collapsed, .collapsing:
+        case .collapsed:
             return 12
-        case .expanding:
-            return 13
         case .expanded, .critical, .about:
             return 14
         }

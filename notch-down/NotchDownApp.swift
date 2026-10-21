@@ -273,13 +273,11 @@ class TimerViewModel: ObservableObject {
 
     /// Bumped to make the island nudge sideways for an urgency milestone.
     @Published var attentionNudge: Int = 0
-    @Published var animationPhase: AnimationPhase = .idle
     @Published var urgencyLevel: UrgencyLevel = .normal
 
     // MARK: - Theme and UI State Properties
     @Published var currentTheme: AppTheme = .dark
     @Published var followsSystemTheme: Bool = true
-    @Published var selectedTimeOption: TimeOption = .custom
     @Published var showingCustomInput: Bool = false
     @Published var selectedPresetMinutes: Double? = 5
 
@@ -524,7 +522,6 @@ class TimerViewModel: ObservableObject {
         lastPeekTime = Date()
 
         updateUrgencyLevel()
-        animationPhase = .rolling
 
         ToastManager.shared.success("\(action.displayName) scheduled in \(Self.describe(minutes: minutes))")
 
@@ -575,7 +572,6 @@ class TimerViewModel: ObservableObject {
         lastAudioTriggerSecond = -1
 
         urgencyLevel = .normal
-        animationPhase = .idle
 
         stopAllSounds()
 
@@ -614,7 +610,6 @@ class TimerViewModel: ObservableObject {
         guard newWhole != oldWhole else { return }
 
         timeRemaining = remaining
-        animationPhase = .rolling
 
         updateUrgencyLevel()
         handleAudioAlerts(secondsRemaining: newWhole)
@@ -714,7 +709,6 @@ class TimerViewModel: ObservableObject {
         deadline = current.addingTimeInterval(300)
         timeRemaining = max(0, self.deadline!.timeIntervalSinceNow)
         lastAudioTriggerSecond = -1
-        animationPhase = .rolling
         updateUrgencyLevel()
 
         ToastManager.shared.success("Timer snoozed: +5 minutes")
@@ -766,27 +760,18 @@ class TimerViewModel: ObservableObject {
     // MARK: - Dynamic Island State Management
 
     func expandIsland() {
-        guard islandState == .collapsed || islandState == .collapsing else { return }
+        guard islandState == .collapsed else { return }
 
         updateActiveScreen()
-
-        animationPhase = .morphing
         showWindow(activating: true)
 
         withAnimation(AnimationFallbackManager.shared.getAnimation(for: .morphing)) {
             islandState = .expanded
         }
-
-        DispatchQueue.main.asyncAfter(deadline: .now() + SpringAnimator.morphDuration) { [weak self] in
-            guard let self = self, self.animationPhase == .morphing else { return }
-            self.animationPhase = .idle
-        }
     }
 
     func collapseIsland() {
         guard islandState == .expanded || islandState == .critical || islandState == .about else { return }
-
-        animationPhase = .morphing
 
         withAnimation(AnimationFallbackManager.shared.getAnimation(for: .morphing)) {
             islandState = .collapsed
@@ -794,7 +779,6 @@ class TimerViewModel: ObservableObject {
 
         DispatchQueue.main.asyncAfter(deadline: .now() + SpringAnimator.morphDuration) { [weak self] in
             guard let self = self else { return }
-            if self.animationPhase == .morphing { self.animationPhase = .idle }
             if !self.isActive && self.islandState == .collapsed {
                 self.hideWindow()
             }
@@ -820,9 +804,8 @@ class TimerViewModel: ObservableObject {
     func openCustomTimerInput(for action: PowerAction) {
         currentPowerAction = action
         showingCustomInput = true
-        selectedTimeOption = .custom
 
-        if islandState == .collapsed || islandState == .collapsing {
+        if islandState == .collapsed {
             expandIsland()
         } else {
             showWindow(activating: true)
@@ -872,7 +855,6 @@ class TimerViewModel: ObservableObject {
 
         withAnimation(AnimationFallbackManager.shared.getAnimation(for: .morphing)) {
             islandState = .critical
-            animationPhase = .glowing
         }
 
         // Nudge the island sideways to draw the eye. Purely a SwiftUI offset —
@@ -894,13 +876,6 @@ class TimerViewModel: ObservableObject {
     func useSystemTheme() {
         ThemeManager.shared.enableSystemThemeFollowing()
         followsSystemTheme = true
-    }
-
-    func selectTimeOption(_ option: TimeOption) {
-        withAnimation(AnimationFallbackManager.shared.getAnimation(for: .buttonSelection)) {
-            selectedTimeOption = option
-            showingCustomInput = (option == .custom)
-        }
     }
 
     // MARK: - Background & System Management
@@ -1039,14 +1014,6 @@ class TimerViewModel: ObservableObject {
             }
         } else {
             alert.runModal()
-        }
-    }
-
-    func testPowerAction(_ action: PowerAction) {
-        PowerManager.shared.testAction(action) { [weak self] success in
-            guard let self = self else { return }
-            self.hasPermissions = success
-            self.showPermissionWarning = !success
         }
     }
 }

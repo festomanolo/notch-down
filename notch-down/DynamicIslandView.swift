@@ -68,11 +68,8 @@ struct DynamicIslandView: View {
     @ViewBuilder
     private var contentLayer: some View {
         switch viewModel.islandState {
-        case .collapsed, .collapsing:
+        case .collapsed:
             collapsedContent
-
-        case .expanding:
-            expandingContent
 
         case .expanded, .critical:
             expandedContent
@@ -106,26 +103,6 @@ struct DynamicIslandView: View {
             // on the countdown does nothing at all.
             if viewModel.isActive { viewModel.expandIsland() }
         }
-    }
-
-    // MARK: - Expanding State Content
-
-    private var expandingContent: some View {
-        HStack {
-            Text("Power Timer")
-                .font(.system(size: 12.5, weight: .semibold, design: .rounded))
-                .foregroundColor(viewModel.currentTheme.textColor)
-
-            Spacer()
-
-            if viewModel.isActive {
-                CompactCountdownDisplay(viewModel: viewModel)
-            } else {
-                CurrentTimeDisplay(theme: viewModel.currentTheme)
-            }
-        }
-        .padding(.horizontal, 24)
-        .padding(.vertical, 12)
     }
 
     // MARK: - Expanded State Content

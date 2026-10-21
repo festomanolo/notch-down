@@ -7,6 +7,7 @@
 
 import AppKit
 import SwiftUI
+import Combine
 
 /// Transparent margin around the island, giving shadows, glow and the attention
 /// nudge room to render inside the window.
@@ -250,6 +251,8 @@ private struct NotchRootView: View {
 
 class NotchPanel: NSPanel {
 
+    private var themeObserver: AnyCancellable?
+
     /// Big enough for the largest island state plus the transparent margin.
     /// Constant for the lifetime of the window — nothing may resize it.
     static var contentSize: CGSize {
@@ -290,6 +293,15 @@ class NotchPanel: NSPanel {
         self.becomesKeyOnlyIfNeeded = true
         self.hidesOnDeactivate = false
         self.animationBehavior = .none
+
+        // Materials, menus and SwiftUI's colour scheme follow the *window's*
+        // appearance. Left to the system, a light island on a dark Mac got dark
+        // frosted materials and dimmed controls underneath its light tint.
+        themeObserver = ThemeManager.shared.$currentTheme
+            .receive(on: RunLoop.main)
+            .sink { [weak self] theme in
+                self?.appearance = NSAppearance(named: theme == .dark ? .darkAqua : .aqua)
+            }
     }
 
     override var canBecomeKey: Bool { true }

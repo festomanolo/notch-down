@@ -581,7 +581,10 @@ class TimerViewModel: ObservableObject {
 
         if wasActive && !silently {
             ToastManager.shared.info("Timer cancelled")
-            hideWindow()
+            // Only tuck away the pill. Hiding an open island here left
+            // `islandState` at .expanded with the window gone, and expandIsland()
+            // then refused to reopen it.
+            if islandState == .collapsed { hideWindow() }
         }
     }
 

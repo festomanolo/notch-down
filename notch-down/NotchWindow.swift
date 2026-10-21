@@ -7,6 +7,7 @@
 
 import AppKit
 import SwiftUI
+import Combine
 
 /// Transparent margin around the island, giving shadows, glow and the attention
 /// nudge room to render inside the window.

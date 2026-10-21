@@ -415,12 +415,19 @@ struct ModernIslandBackground: View {
                     lineWidth: 1
                 )
 
-            // Urgency glow effect
+            // Urgency glow: breathes in the last minute, pulses in the last ten
+            // seconds. The loop lives in its own phase animator so it can never
+            // leak into the rest of the island the way a repeatForever did.
             if urgency != .normal {
                 RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                     .stroke(urgencyGlowColor, lineWidth: 2)
                     .blur(radius: 6)
-                    .opacity(urgencyGlowOpacity)
+                    .phaseAnimator([0.35, 1.0]) { glow, phase in
+                        glow.opacity(urgencyGlowOpacity * phase)
+                    } animation: { _ in
+                        .easeInOut(duration: urgency == .critical ? 0.45 : 1.3)
+                    }
+                    .allowsHitTesting(false)
             }
         }
     }
@@ -440,8 +447,8 @@ struct ModernIslandBackground: View {
     private var urgencyGlowOpacity: Double {
         switch urgency {
         case .normal:   return 0
-        case .warning:  return 0.4
-        case .critical: return 0.7
+        case .warning:  return 0.55
+        case .critical: return 0.9
         }
     }
 }

@@ -16,12 +16,20 @@ struct ModernButton: View {
     
     @State private var isHovered = false
     @State private var glowRotation: Double = 0
+    @Environment(\.colorScheme) private var colorScheme
+
+    /// Tinted label colour. Yellow and orange text on a light panel was close
+    /// to invisible, so on light backgrounds the tint is deepened.
+    private var labelColor: Color {
+        guard !isSelected else { return .white }
+        return colorScheme == .light ? color.mix(with: .black, by: 0.35) : color
+    }
     
     var body: some View {
         Button(action: action) {
             Text(title)
                 .font(.system(size: 11.5, weight: isSelected ? .bold : .semibold, design: .rounded))
-                .foregroundColor(isSelected ? .white : color)
+                .foregroundColor(labelColor)
                 .lineLimit(1)
                 .fixedSize(horizontal: true, vertical: false)
                 .padding(.horizontal, 10)

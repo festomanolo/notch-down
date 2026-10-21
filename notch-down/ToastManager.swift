@@ -166,6 +166,7 @@ struct ToastContainerView: View {
                     toastManager.dismiss()
                 }
                 // The exit uses a fixed-length curve. A spring keeps settling
+                // for ~0.6s, longer than the island takes to order its window
                 .transition(.move(edge: .top).combined(with: .opacity))
                 // Reported so the dismiss button is inside the window's
                 // interactive region, which otherwise covers only the island.

@@ -717,11 +717,20 @@ class TimerViewModel: ObservableObject {
         ToastManager.shared.success("Timer snoozed: +5 minutes")
     }
 
-    /// Toggles between shutdown and sleep (Long Press)
+    /// Switches the running countdown between shutdown and sleep (Long Press).
+    ///
+    /// Changes `scheduledAction` — the one that actually fires. Toggling only
+    /// `currentPowerAction` updated nothing on screen and left the original
+    /// action armed.
     func togglePrimaryAction() {
-        withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-            currentPowerAction = (currentPowerAction == .shutdown) ? .sleep : .shutdown
+        guard isActive, let scheduled = scheduledAction else { return }
+        let next: PowerAction = scheduled == .sleep ? .shutdown : .sleep
+
+        withAnimation(SpringAnimator.buttonSelection()) {
+            scheduledAction = next
+            currentPowerAction = next
         }
+        ToastManager.shared.info("Switched to \(next.displayName)")
     }
 
     // MARK: - Intelligent Visibility Logic

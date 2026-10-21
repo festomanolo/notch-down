@@ -252,6 +252,7 @@ private struct NotchRootView: View {
 class NotchPanel: NSPanel {
 
     private var themeObserver: AnyCancellable?
+
     /// Big enough for the largest island state plus the transparent margin.
     /// Constant for the lifetime of the window — nothing may resize it.
     static var contentSize: CGSize {

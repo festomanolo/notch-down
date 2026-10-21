@@ -1003,15 +1003,8 @@ struct AboutView: View {
         )
     }
 
-    /// Resolved once — `NSImage(named:)` plus a bundle probe on every render is
-    /// wasteful for an asset that cannot change at runtime.
-    private static let profileImage: NSImage? = {
-        if let image = NSImage(named: "festomanolo") { return image }
-        if let path = Bundle.main.path(forResource: "festomanolo", ofType: "jpeg") {
-            return NSImage(contentsOfFile: path)
-        }
-        return nil
-    }()
+    /// Resolved once rather than on every render.
+    private static let profileImage = NSImage(named: "festomanolo")
 }
 
 // MARK: - About Circle Button

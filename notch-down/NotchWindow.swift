@@ -294,6 +294,7 @@ class NotchPanel: NSPanel {
         self.hidesOnDeactivate = false
         self.animationBehavior = .none
 
+        // Materials, menus and SwiftUI's colour scheme follow the *window's*
     }
 
     override var canBecomeKey: Bool { true }

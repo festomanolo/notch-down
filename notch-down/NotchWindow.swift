@@ -146,8 +146,14 @@ class NotchWindowController: NSWindowController {
 
     /// Orders the panel out once SwiftUI has finished animating it away.
     func dismiss() {
+        guard let window = window else { return }
+        let wasKey = window.isKeyWindow
         isPresented = false
-        window?.orderOut(nil)
+        window.orderOut(nil)
+
+        // Hand focus back to whatever the user was doing, as a popover would,
+        // instead of leaving a windowless NotchDown as the active app.
+        if wasKey && NSApp.isActive { NSApp.deactivate() }
     }
 }
 

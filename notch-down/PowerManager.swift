@@ -121,6 +121,16 @@ class PowerManager: ObservableObject {
             return
         }
 
+        #if DEBUG
+        // `-NotchDownDryRun YES` on the command line: exercise every countdown
+        // and UI path without ever touching the machine's power state.
+        if UserDefaults.standard.bool(forKey: "NotchDownDryRun") {
+            ToastManager.shared.warning("Dry run — would \(action.presentVerb) now")
+            completion?(.success(()))
+            return
+        }
+        #endif
+
         isExecuting = true
 
         let result = performExecution(action)

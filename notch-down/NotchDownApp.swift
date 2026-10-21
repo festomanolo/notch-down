@@ -256,6 +256,15 @@ class TimerViewModel: ObservableObject {
     // MARK: - Timer Properties
     @Published var timeRemaining: TimeInterval = 0
     @Published var isActive = false
+    /// Full length of the running countdown, snoozes included — the
+    /// denominator for the progress ring.
+    @Published private(set) var totalDuration: TimeInterval = 0
+
+    /// Fraction of the countdown still to run, 1 → 0.
+    var progress: Double {
+        guard totalDuration > 0 else { return 0 }
+        return min(1, max(0, timeRemaining / totalDuration))
+    }
 
     /// Wall-clock instant the action fires.
     ///
@@ -557,6 +566,7 @@ class TimerViewModel: ObservableObject {
 
         deadline = Date().addingTimeInterval(minutes * 60)
         timeRemaining = minutes * 60
+        totalDuration = minutes * 60
         scheduledAction = action
         currentPowerAction = action
         isActive = true
@@ -622,6 +632,7 @@ class TimerViewModel: ObservableObject {
         let wasActive = isActive
         isActive = false
         timeRemaining = 0
+        totalDuration = 0
         scheduledAction = nil
         lastAudioTriggerSecond = -1
         peekWorkItem?.cancel()
@@ -771,6 +782,7 @@ class TimerViewModel: ObservableObject {
 
         let extended = current.addingTimeInterval(300)
         deadline = extended
+        totalDuration += 300
         timeRemaining = max(0, extended.timeIntervalSinceNow)
         lastAudioTriggerSecond = -1
         updateUrgencyLevel()

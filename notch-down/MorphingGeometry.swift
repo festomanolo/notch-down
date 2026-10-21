@@ -60,7 +60,8 @@ enum MorphingGeometry {
                 size.height = 178
             } else if content.isTimerActive {
                 size.height = 234
-                size.height = state == .critical ? 246 : 234
+                if state == .critical { size.height += 8 }       // larger digit slots
+                if content.showsUrgencyNotice { size.height += 36 }
             } else if content.isShowingCustomInput {
                 size.height = 178
             } else {

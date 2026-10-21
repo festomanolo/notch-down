@@ -37,19 +37,13 @@ class ThemeManager: ObservableObject {
     private let userDefaults = UserDefaults.standard
     private let themeKey = "DynamicIslandTheme"
     private let followsSystemKey = "DynamicIslandFollowsSystemTheme"
-    private var systemThemeObserver: NSObjectProtocol?
+    private var systemThemeObserver: NSKeyValueObservation?
     
     // MARK: - Initialization
     
     private init() {
         loadThemePreference()
         setupSystemThemeObserver()
-    }
-    
-    deinit {
-        if let observer = systemThemeObserver {
-            DistributedNotificationCenter.default.removeObserver(observer)
-        }
     }
     
     // MARK: - Theme Management
@@ -95,25 +89,24 @@ class ThemeManager: ObservableObject {
     
     /// Detects current system theme preference
     func detectSystemTheme() -> AppTheme {
-        let style = NSApplication.shared.effectiveAppearance.name.rawValue
-        // NSAppearanceNameDarkAqua or similar
-        if style.contains("Dark") {
-            return .dark
-        }
-        return .light
+        let match = NSApplication.shared.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua])
+        return match == .darkAqua ? .dark : .light
     }
     
     // MARK: - System Theme Observer
     
-    /// Sets up observer for system theme changes
+    /// Sets up observer for system theme changes.
+    ///
+    /// Observes the app's effective appearance rather than the
+    /// `AppleInterfaceThemeChangedNotification` distributed notification: that
+    /// one is delivered before `effectiveAppearance` updates, so reading it
+    /// there picked up the *old* theme.
     private func setupSystemThemeObserver() {
-        systemThemeObserver = DistributedNotificationCenter.default.addObserver(
-            forName: NSNotification.Name("AppleInterfaceThemeChangedNotification"),
-            object: nil,
-            queue: .main
-        ) { [weak self] _ in
-            guard let self = self, self.followsSystemTheme else { return }
-            self.updateFromSystemTheme()
+        systemThemeObserver = NSApplication.shared.observe(\.effectiveAppearance) { [weak self] _, _ in
+            DispatchQueue.main.async {
+                guard let self = self, self.followsSystemTheme else { return }
+                self.updateFromSystemTheme()
+            }
         }
     }
     
@@ -144,28 +137,5 @@ class ThemeManager: ObservableObject {
         if followsSystemTheme {
             updateFromSystemTheme()
         }
-    }
-}
-
-// MARK: - Theme Accessibility Extensions
-
-extension ThemeManager {
-    /// Checks if current theme meets WCAG contrast requirements
-    func meetsWCAGContrast(level: WCAGLevel = .AA) -> Bool {
-        // This would use actual contrast ratio calculations
-        // For now, we assume our color choices meet requirements
-        return true
-    }
-    
-    /// WCAG contrast level requirements
-    enum WCAGLevel {
-        case AA      // Minimum contrast ratio 4.5:1 for normal text
-        case AAA     // Enhanced contrast ratio 7:1 for normal text
-    }
-    
-    /// Gets high contrast variant if available
-    func highContrastVariant() -> AppTheme {
-        // For high contrast mode, we might adjust colors
-        return currentTheme
     }
 }

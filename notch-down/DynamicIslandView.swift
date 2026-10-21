@@ -18,11 +18,19 @@ import Combine
 /// layout engine out of the loop.
 struct DynamicIslandView: View {
     @ObservedObject var viewModel: TimerViewModel
+    @ObservedObject private var motion = AnimationFallbackManager.shared
 
     /// Horizontal offset for the urgency attention nudge.
     @State private var nudgeOffset: CGFloat = 0
+    @State private var isHoveringPill = false
 
     var body: some View {
+        let size = currentFrameSize
+        let shape = RoundedRectangle(
+            cornerRadius: MorphingGeometry.cornerRadius(for: viewModel.islandState),
+            style: .continuous
+        )
+
         ZStack(alignment: .top) {
             ModernIslandBackground(
                 state: viewModel.islandState,
@@ -30,22 +38,28 @@ struct DynamicIslandView: View {
                 theme: viewModel.currentTheme
             )
 
-            // Swapped outright rather than cross-faded. An `.id` + `.transition`
-            // dissolve here inherits the island's morph animation and gets
-            // stuck part-way: it left the warning and critical labels stacked
-            // on top of each other, and could leave the whole content layer
-            // sitting at zero opacity. The size morph below is the motion that
-            // matters; a half-finished fade is worse than none.
+            // Each state's content blur-fades in once the shape is under way
+            // and is clipped to the island, so nothing spills past the edge
+            // mid-morph. (A stuck half-faded swap used to happen here; the
+            // cause was the repeatForever urgency curve, since removed.)
             contentLayer
-                .frame(width: currentFrameSize.width)
+                .id(contentKind)
+                .transition(.islandContent)
+                .frame(width: size.width, height: size.height, alignment: .top)
+                .clipShape(shape)
         }
         // An explicit, continuous size is what the morph spring interpolates.
-        .frame(width: currentFrameSize.width, height: currentFrameSize.height)
-        .animation(SpringAnimator.morphToExpanded(), value: currentFrameSize)
-        .animation(SpringAnimator.morphToExpanded(), value: viewModel.islandState)
-        // Entrance: drops out of the notch and settles.
-        .scaleEffect(viewModel.isIslandVisible ? 1.0 : 0.86, anchor: .top)
-        .offset(x: nudgeOffset, y: viewModel.isIslandVisible ? 0 : -18)
+        .frame(width: size.width, height: size.height)
+        .animation(morphAnimation, value: size)
+        .animation(morphAnimation, value: viewModel.islandState)
+        // The resting pill leans in under the pointer, like a control would.
+        .scaleEffect(viewModel.islandState == .collapsed && isHoveringPill ? 1.04 : 1, anchor: .top)
+        .animation(SpringAnimator.hover(), value: isHoveringPill)
+        .onHover { isHoveringPill = $0 }
+        // Entrance: drops out of the notch, sharpening as it settles.
+        .scaleEffect(viewModel.isIslandVisible ? 1.0 : 0.82, anchor: .top)
+        .blur(radius: viewModel.isIslandVisible || motion.reduceMotion ? 0 : 6)
+        .offset(x: nudgeOffset, y: viewModel.isIslandVisible ? 0 : -22)
         .opacity(viewModel.isIslandVisible ? 1 : 0)
         .onChange(of: viewModel.attentionNudge) {
             playAttentionNudge()
@@ -54,25 +68,44 @@ struct DynamicIslandView: View {
         .reportsIslandHitRegion()
     }
 
+    /// Bouncy on the way out of the notch, no overshoot on the way back in.
+    private var morphAnimation: Animation {
+        if motion.reduceMotion { return .easeInOut(duration: 0.15) }
+        return viewModel.islandState == .collapsed
+            ? SpringAnimator.morphToCollapsed()
+            : SpringAnimator.morphToExpanded()
+    }
+
     /// Quick sideways flick, then settle. Replaces the old window-frame shake.
     private func playAttentionNudge() {
+        guard !motion.reduceMotion else { return }
         withAnimation(.easeOut(duration: 0.08)) { nudgeOffset = 6 }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) {
-            withAnimation(.spring(response: 0.34, dampingFraction: 0.38)) { nudgeOffset = 0 }
+            withAnimation(.spring(duration: 0.5, bounce: 0.55)) { nudgeOffset = 0 }
         }
     }
 
-
     // MARK: - Content Layer
+
+    /// Identity for the content cross-fade. Expanded and critical share one,
+    /// so the urgency pop-out grows in place rather than re-fading.
+    private enum ContentKind: Hashable {
+        case pill, panel, about
+    }
+
+    private var contentKind: ContentKind {
+        switch viewModel.islandState {
+        case .collapsed:            return .pill
+        case .expanded, .critical:  return .panel
+        case .about:                return .about
+        }
+    }
 
     @ViewBuilder
     private var contentLayer: some View {
         switch viewModel.islandState {
-        case .collapsed, .collapsing:
+        case .collapsed:
             collapsedContent
-
-        case .expanding:
-            expandingContent
 
         case .expanded, .critical:
             expandedContent
@@ -106,26 +139,6 @@ struct DynamicIslandView: View {
             // on the countdown does nothing at all.
             if viewModel.isActive { viewModel.expandIsland() }
         }
-    }
-
-    // MARK: - Expanding State Content
-
-    private var expandingContent: some View {
-        HStack {
-            Text("Power Timer")
-                .font(.system(size: 12.5, weight: .semibold, design: .rounded))
-                .foregroundColor(viewModel.currentTheme.textColor)
-
-            Spacer()
-
-            if viewModel.isActive {
-                CompactCountdownDisplay(viewModel: viewModel)
-            } else {
-                CurrentTimeDisplay(theme: viewModel.currentTheme)
-            }
-        }
-        .padding(.horizontal, 24)
-        .padding(.vertical, 12)
     }
 
     // MARK: - Expanded State Content
@@ -162,9 +175,6 @@ struct DynamicIslandView: View {
             if viewModel.isShowingSuggestion {
                 suggestionView
             } else if viewModel.isActive {
-                // The full slot-machine roller, not a plain label. This view
-                // exists in the project but was never actually rendered, which
-                // is why no rolling seconds animation ever appeared.
                 CountdownDisplay(viewModel: viewModel)
             } else {
                 TimerSelectionView(viewModel: viewModel)
@@ -226,9 +236,39 @@ struct DynamicIslandView: View {
     }
 }
 
+// MARK: - Content Transition
+
+/// Blur + fade + slight scale from the top: incoming content resolves out of
+/// the morph as the shape arrives; outgoing content gets out of the way fast.
+private struct IslandContentFade: ViewModifier {
+    let isHidden: Bool
+
+    func body(content: Content) -> some View {
+        content
+            .blur(radius: isHidden ? 8 : 0)
+            .opacity(isHidden ? 0 : 1)
+            .scaleEffect(isHidden ? 0.94 : 1, anchor: .top)
+    }
+}
+
+private extension AnyTransition {
+    static var islandContent: AnyTransition {
+        .asymmetric(
+            insertion: .modifier(active: IslandContentFade(isHidden: true), identity: IslandContentFade(isHidden: false))
+                .animation(SpringAnimator.contentSwap().delay(0.07)),
+            removal: .modifier(active: IslandContentFade(isHidden: true), identity: IslandContentFade(isHidden: false))
+                .animation(.easeOut(duration: 0.14))
+        )
+    }
+}
+
 // MARK: - Pill Gestures
 
-/// Swipe-right to snooze, swipe-left to cancel, long-press to toggle action.
+/// Swipe right to snooze, swipe left to cancel, long-press to switch action.
+///
+/// The pill tracks the pointer with rubber-banding and reveals what letting go
+/// will do; crossing the threshold gives a trackpad detent. A quick flick
+/// counts even if it ends short of the threshold.
 ///
 /// Applied conditionally: when no timer is running the pill hosts a button, and
 /// a competing DragGesture would eat its taps.
@@ -236,28 +276,80 @@ private struct PillGestures: ViewModifier {
     @ObservedObject var viewModel: TimerViewModel
     let enabled: Bool
 
+    @State private var dragX: CGFloat = 0
+    @State private var isArmed = false
+
+    private let threshold: CGFloat = 46
+
     func body(content: Content) -> some View {
         if enabled {
             content
+                .offset(x: rubberBanded(dragX))
+                .overlay(alignment: .leading) {
+                    hint(systemImage: "goforward.plus", color: .blue, reveal: dragX)
+                        .padding(.leading, 10)
+                }
+                .overlay(alignment: .trailing) {
+                    hint(systemImage: "xmark", color: .red, reveal: -dragX)
+                        .padding(.trailing, 10)
+                }
                 .gesture(
-                    DragGesture(minimumDistance: 30)
+                    DragGesture(minimumDistance: 8)
+                        .onChanged { value in
+                            dragX = value.translation.width
+                            let armed = abs(dragX) > threshold
+                            if armed != isArmed {
+                                isArmed = armed
+                                if armed { Haptics.detent() }
+                            }
+                        }
                         .onEnded { value in
-                            if value.translation.width > 50 {
+                            let x = value.translation.width
+                            let flick = value.predictedEndTranslation.width
+
+                            if x > threshold || flick > threshold * 3 {
+                                Haptics.confirm()
                                 viewModel.snoozeTimer()
-                            } else if value.translation.width < -50 {
+                            } else if x < -threshold || flick < -threshold * 3 {
+                                Haptics.confirm()
                                 viewModel.cancelTimer()
                             }
+
+                            isArmed = false
+                            withAnimation(.spring(duration: 0.45, bounce: 0.35)) { dragX = 0 }
                         }
                 )
                 .simultaneousGesture(
-                    LongPressGesture(minimumDuration: 0.8)
+                    LongPressGesture(minimumDuration: 0.6)
                         .onEnded { _ in
+                            Haptics.confirm()
                             viewModel.togglePrimaryAction()
                         }
                 )
         } else {
             content
         }
+    }
+
+    /// Follows the pointer 1:1 at first, then resists — the same feel as
+    /// overscrolling a list.
+    private func rubberBanded(_ x: CGFloat) -> CGFloat {
+        let limit: CGFloat = 64
+        let magnitude = limit * (1 - exp(-abs(x) / limit))
+        return x < 0 ? -magnitude : magnitude
+    }
+
+    private func hint(systemImage: String, color: Color, reveal: CGFloat) -> some View {
+        let progress = min(1, max(0, reveal / threshold))
+        return Image(systemName: systemImage)
+            .font(.system(size: 11, weight: .bold))
+            .foregroundColor(.white)
+            .frame(width: 22, height: 22)
+            .background(Circle().fill(color))
+            .scaleEffect(0.5 + 0.5 * progress * (isArmed ? 1.12 : 1))
+            .opacity(progress)
+            .allowsHitTesting(false)
+            .animation(SpringAnimator.hover(), value: isArmed)
     }
 }
 
@@ -323,12 +415,19 @@ struct ModernIslandBackground: View {
                     lineWidth: 1
                 )
 
-            // Urgency glow effect
+            // Urgency glow: breathes in the last minute, pulses in the last ten
+            // seconds. The loop lives in its own phase animator so it can never
+            // leak into the rest of the island the way a repeatForever did.
             if urgency != .normal {
                 RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                     .stroke(urgencyGlowColor, lineWidth: 2)
                     .blur(radius: 6)
-                    .opacity(urgencyGlowOpacity)
+                    .phaseAnimator([0.35, 1.0]) { glow, phase in
+                        glow.opacity(urgencyGlowOpacity * phase)
+                    } animation: { _ in
+                        .easeInOut(duration: urgency == .critical ? 0.45 : 1.3)
+                    }
+                    .allowsHitTesting(false)
             }
         }
     }
@@ -348,8 +447,8 @@ struct ModernIslandBackground: View {
     private var urgencyGlowOpacity: Double {
         switch urgency {
         case .normal:   return 0
-        case .warning:  return 0.4
-        case .critical: return 0.7
+        case .warning:  return 0.55
+        case .critical: return 0.9
         }
     }
 }
@@ -601,7 +700,7 @@ struct TappableCountdownStarter: View {
             .padding(.vertical, 4)
             .background(
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(viewModel.currentTheme.secondaryBackground)
+                    .fill(viewModel.currentTheme.secondaryBackground.opacity(isHovered ? 1.8 : 1))
                     .overlay(
                         RoundedRectangle(cornerRadius: 12, style: .continuous)
                             .stroke(viewModel.currentTheme.borderColor, lineWidth: 1)
@@ -609,8 +708,7 @@ struct TappableCountdownStarter: View {
             )
         }
         .buttonStyle(PlainButtonStyle())
-        .scaleEffect(isHovered ? 1.04 : 1.0)
-        .animation(.spring(response: 0.3, dampingFraction: 0.7), value: isHovered)
+        .animation(SpringAnimator.hover(), value: isHovered)
         .onHover { isHovered = $0 }
     }
 }
@@ -827,7 +925,7 @@ struct AboutView: View {
                     .font(.system(size: 12, weight: .medium, design: .rounded))
                     .foregroundColor(theme.secondaryTextColor)
 
-                Text("NotchDown v1.0.0")
+                Text("NotchDown \(UpdateChecker.currentVersion)")
                     .font(.system(size: 11, weight: .bold, design: .monospaced))
                     .padding(.horizontal, 8)
                     .padding(.vertical, 4)
@@ -842,18 +940,32 @@ struct AboutView: View {
 
     private var actionButtons: some View {
         HStack(spacing: 8) {
-            Button {
-                viewModel.handleCheckForUpdates()
-            } label: {
-                capsuleLabel(
-                    text: viewModel.isCheckingForUpdates ? "Checking…" : "Check Updates",
-                    systemImage: "arrow.clockwise.circle",
-                    showsProgress: viewModel.isCheckingForUpdates,
-                    tint: .blue
-                )
+            if let url = viewModel.availableUpdateURL {
+                Button {
+                    NSWorkspace.shared.open(url)
+                } label: {
+                    capsuleLabel(
+                        text: "Download Update",
+                        systemImage: "arrow.down.circle",
+                        showsProgress: false,
+                        tint: .blue
+                    )
+                }
+                .buttonStyle(PlainButtonStyle())
+            } else {
+                Button {
+                    viewModel.handleCheckForUpdates()
+                } label: {
+                    capsuleLabel(
+                        text: viewModel.isCheckingForUpdates ? "Checking…" : "Check Updates",
+                        systemImage: "arrow.clockwise.circle",
+                        showsProgress: viewModel.isCheckingForUpdates,
+                        tint: .blue
+                    )
+                }
+                .buttonStyle(PlainButtonStyle())
+                .disabled(viewModel.isCheckingForUpdates)
             }
-            .buttonStyle(PlainButtonStyle())
-            .disabled(viewModel.isCheckingForUpdates)
 
             Button {
                 viewModel.runDiagnostics()

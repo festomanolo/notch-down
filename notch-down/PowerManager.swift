@@ -121,6 +121,16 @@ class PowerManager: ObservableObject {
             return
         }
 
+        #if DEBUG
+        // `-NotchDownDryRun YES` on the command line: exercise every countdown
+        // and UI path without ever touching the machine's power state.
+        if UserDefaults.standard.bool(forKey: "NotchDownDryRun") {
+            ToastManager.shared.warning("Dry run — would \(action.presentVerb) now")
+            completion?(.success(()))
+            return
+        }
+        #endif
+
         isExecuting = true
 
         let result = performExecution(action)
@@ -281,10 +291,5 @@ class PowerManager: ObservableObject {
         if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Automation") {
             NSWorkspace.shared.open(url)
         }
-    }
-
-    /// Test whether an action would be permitted, without executing it.
-    func testAction(_ action: PowerAction, completion: @escaping (Bool) -> Void) {
-        verifyPermissions(completion: completion)
     }
 }

@@ -11,8 +11,12 @@ import IOKit.pwr_mgt
 import Combine
 import UniformTypeIdentifiers
 
-/// Diagnostics manager for testing and verifying system capabilities
-class DiagnosticsManager: ObservableObject {
+/// Diagnostics manager for testing and verifying system capabilities.
+///
+/// Main-actor bound: the checks drive `NSAppleScript`, which is not
+/// thread-safe, and they used to run on a global queue.
+@MainActor
+final class DiagnosticsManager: ObservableObject {
     static let shared = DiagnosticsManager()
     
     @Published var diagnosticResults: [DiagnosticResult] = []
@@ -59,29 +63,16 @@ class DiagnosticsManager: ObservableObject {
         isRunningDiagnostics = true
         diagnosticResults.removeAll()
         
-        DispatchQueue.global(qos: .userInitiated).async {
-            // Test 1: System Information
+        // Deferred a turn so the menu that triggered this can close first.
+        DispatchQueue.main.async {
             self.testSystemInformation()
-            
-            // Test 2: Permissions
             self.testPermissions()
-            
-            // Test 3: Power Management Capabilities
             self.testPowerCapabilities()
-            
-            // Test 4: AppleScript Execution
             self.testAppleScriptExecution()
-            
-            // Test 5: IOKit Access
-            self.testIOKitAccess()
-            
-            // Test 6: Battery Status
             self.testBatteryStatus()
-            
-            DispatchQueue.main.async {
-                self.isRunningDiagnostics = false
-                completion()
-            }
+
+            self.isRunningDiagnostics = false
+            completion()
         }
     }
     
@@ -108,16 +99,9 @@ class DiagnosticsManager: ObservableObject {
     }
     
     private func testPermissions() {
-        let semaphore = DispatchSemaphore(value: 0)
         var hasPermission = false
-        
-        PowerManager.shared.verifyPermissions { result in
-            hasPermission = result
-            semaphore.signal()
-        }
-        
-        semaphore.wait()
-        
+        PowerManager.shared.verifyPermissions { hasPermission = $0 }
+
         addResult(
             category: "Permissions",
             test: "Automation Access",
@@ -127,14 +111,16 @@ class DiagnosticsManager: ObservableObject {
     }
     
     private func testPowerCapabilities() {
-        // Test if we can access power management
-        let canAccessPower = IOPMFindPowerManagement(mach_port_t(MACH_PORT_NULL)) != MACH_PORT_NULL
-        
+        // The port is a real Mach send right; close it rather than leak one per run.
+        let port = IOPMFindPowerManagement(mach_port_t(MACH_PORT_NULL))
+        let canAccessPower = port != MACH_PORT_NULL
+        if canAccessPower { IOServiceClose(port) }
+
         addResult(
             category: "Power Management",
             test: "IOKit Power Access",
             status: canAccessPower ? .passed : .warning,
-            message: canAccessPower ? "IOKit power management accessible" : "Limited power management access"
+            message: canAccessPower ? "IOKit power management accessible (sleep)" : "Cannot access IOKit power port (sleep may use fallback)"
         )
     }
     
@@ -172,26 +158,6 @@ class DiagnosticsManager: ObservableObject {
         }
     }
     
-    private func testIOKitAccess() {
-        let port = IOPMFindPowerManagement(mach_port_t(MACH_PORT_NULL))
-        
-        if port != MACH_PORT_NULL {
-            addResult(
-                category: "IOKit",
-                test: "Power Management Port",
-                status: .passed,
-                message: "IOKit power management port accessible"
-            )
-        } else {
-            addResult(
-                category: "IOKit",
-                test: "Power Management Port",
-                status: .warning,
-                message: "Cannot access IOKit power port (sleep may use fallback)"
-            )
-        }
-    }
-    
     private func testBatteryStatus() {
         let batteryLevel = BatteryManager.shared.batteryLevel
         let isPluggedIn = BatteryManager.shared.isPluggedIn
@@ -211,16 +177,13 @@ class DiagnosticsManager: ObservableObject {
     // MARK: - Helper Methods
     
     private func addResult(category: String, test: String, status: DiagnosticResult.Status, message: String) {
-        DispatchQueue.main.async {
-            let result = DiagnosticResult(
-                category: category,
-                test: test,
-                status: status,
-                message: message,
-                timestamp: Date()
-            )
-            self.diagnosticResults.append(result)
-        }
+        diagnosticResults.append(DiagnosticResult(
+            category: category,
+            test: test,
+            status: status,
+            message: message,
+            timestamp: Date()
+        ))
     }
     
     /// Generate a diagnostic report as text
@@ -255,7 +218,7 @@ class DiagnosticsManager: ObservableObject {
         
         let savePanel = NSSavePanel()
         savePanel.allowedContentTypes = [.plainText]
-        savePanel.nameFieldStringValue = "NotchDown_Diagnostics_\(Date().timeIntervalSince1970).txt"
+        savePanel.nameFieldStringValue = "NotchDown Diagnostics.txt"
         savePanel.title = "Export Diagnostic Report"
         
         savePanel.begin { response in

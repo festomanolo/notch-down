@@ -10,48 +10,54 @@ import Combine
 import IOKit.ps
 
 /// Singleton manager for monitoring system battery levels and power source state
-class BatteryManager: ObservableObject {
+final class BatteryManager: ObservableObject {
     static let shared = BatteryManager()
-    
-    @Published var batteryLevel: Double = 100
-    @Published var isPluggedIn: Bool = true
-    
-    private var timer: Timer?
-    
+
+    @Published private(set) var batteryLevel: Double = 100
+    @Published private(set) var isPluggedIn: Bool = true
+
+    private var runLoopSource: CFRunLoopSource?
+
     private init() {
         updateBatteryState()
         startMonitoring()
     }
-    
-    /// Starts periodic monitoring of battery state
+
+    /// Subscribes to IOKit power-source changes.
+    ///
+    /// Event-driven instead of the old 60-second poll: updates land the moment
+    /// the charger is pulled or the level ticks, with no timer waking the Mac.
     private func startMonitoring() {
-        timer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
-            self?.updateBatteryState()
-        }
+        let context = Unmanaged.passUnretained(self).toOpaque()
+        guard let source = IOPSNotificationCreateRunLoopSource({ context in
+            guard let context = context else { return }
+            Unmanaged<BatteryManager>.fromOpaque(context).takeUnretainedValue().updateBatteryState()
+        }, context)?.takeRetainedValue() else { return }
+
+        CFRunLoopAddSource(CFRunLoopGetMain(), source, .defaultMode)
+        runLoopSource = source
     }
-    
+
     /// Updates battery level and power source state using IOKit
     func updateBatteryState() {
         let snapshot = IOPSCopyPowerSourcesInfo().takeRetainedValue()
         let sources = IOPSCopyPowerSourcesList(snapshot).takeRetainedValue() as Array
-        
+
         for source in sources {
-            if let description = IOPSGetPowerSourceDescription(snapshot, source).takeUnretainedValue() as? [String: Any] {
-                let capacity = description[kIOPSCurrentCapacityKey] as? Int ?? 100
-                let maxCapacity = description[kIOPSMaxCapacityKey] as? Int ?? 100
-                let powerSource = description[kIOPSPowerSourceStateKey] as? String ?? kIOPSACPowerValue
-                
-                self.batteryLevel = (Double(capacity) / Double(maxCapacity)) * 100
-                self.isPluggedIn = (powerSource == kIOPSACPowerValue)
-                
-                // Post notification for significant changes if needed
-                NotificationCenter.default.post(name: .batteryStateChanged, object: nil)
-                break
-            }
+            guard let description = IOPSGetPowerSourceDescription(snapshot, source)?
+                .takeUnretainedValue() as? [String: Any] else { continue }
+
+            let capacity = description[kIOPSCurrentCapacityKey] as? Int ?? 100
+            let maxCapacity = max(1, description[kIOPSMaxCapacityKey] as? Int ?? 100)
+            let powerSource = description[kIOPSPowerSourceStateKey] as? String ?? kIOPSACPowerValue
+
+            let level = Double(capacity) / Double(maxCapacity) * 100
+            let pluggedIn = powerSource == kIOPSACPowerValue
+
+            // Publish only real changes so subscribers are not re-run for nothing.
+            if level != batteryLevel { batteryLevel = level }
+            if pluggedIn != isPluggedIn { isPluggedIn = pluggedIn }
+            break
         }
     }
-}
-
-extension Notification.Name {
-    static let batteryStateChanged = Notification.Name("batteryStateChanged")
 }

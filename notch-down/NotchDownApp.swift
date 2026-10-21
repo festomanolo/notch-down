@@ -256,6 +256,15 @@ class TimerViewModel: ObservableObject {
     // MARK: - Timer Properties
     @Published var timeRemaining: TimeInterval = 0
     @Published var isActive = false
+    /// Full length of the running countdown, snoozes included — the
+    /// denominator for the progress ring.
+    @Published private(set) var totalDuration: TimeInterval = 0
+
+    /// Fraction of the countdown still to run, 1 → 0.
+    var progress: Double {
+        guard totalDuration > 0 else { return 0 }
+        return min(1, max(0, timeRemaining / totalDuration))
+    }
 
     /// Wall-clock instant the action fires.
     ///
@@ -273,19 +282,22 @@ class TimerViewModel: ObservableObject {
 
     /// Bumped to make the island nudge sideways for an urgency milestone.
     @Published var attentionNudge: Int = 0
-    @Published var animationPhase: AnimationPhase = .idle
     @Published var urgencyLevel: UrgencyLevel = .normal
 
     // MARK: - Theme and UI State Properties
     @Published var currentTheme: AppTheme = .dark
     @Published var followsSystemTheme: Bool = true
-    @Published var selectedTimeOption: TimeOption = .custom
     @Published var showingCustomInput: Bool = false
     @Published var selectedPresetMinutes: Double? = 5
 
     // MARK: - Peeking (Intelligent Visibility) Properties
     private var lastPeekTime: Date = Date()
     private var isPeeking: Bool = false
+    private var peekWorkItem: DispatchWorkItem?
+    /// Mirrors whether a toast is on screen; toasts render inside the island's
+    /// window, so the window must be out for them to be seen at all.
+    private var isToastVisible = false
+    private var toastObserver: AnyCancellable?
 
     // MARK: - Private Properties
     private var timer: Timer?
@@ -298,6 +310,9 @@ class TimerViewModel: ObservableObject {
     private var batteryObserver: AnyCancellable?
     private var collapseObserver: NSObjectProtocol?
     private var shortcutObserver: NSObjectProtocol?
+    #if DEBUG
+    private var debugObserver: NSObjectProtocol?
+    #endif
 
     /// Suppresses `didSet` side effects while persisted values are being loaded.
     private var isLoadingSettings = false
@@ -313,10 +328,15 @@ class TimerViewModel: ObservableObject {
     @Published var isShowingSuggestion = false
     @Published var suggestionMessage = ""
     @Published var currentPowerAction: PowerAction = .shutdown
+    /// Set once the low-battery suggestion has been offered, so dismissing it
+    /// is final — it used to reappear on every battery update below 20%.
+    private var hasSuggestedForThisDischarge = false
 
     // About Page State
     @Published var isCheckingForUpdates = false
     @Published var updateStatusMessage = ""
+    /// Release page for a newer version, once a check has found one.
+    @Published var availableUpdateURL: URL?
 
     // Permission State
     @Published var hasPermissions = true
@@ -373,13 +393,18 @@ class TimerViewModel: ObservableObject {
                 self.followsSystemTheme = ThemeManager.shared.followsSystemTheme
             }
 
-        // Observe collapse notifications (for click-outside)
+        // Outside click / Esc. The urgency pop-out is left alone — it exists to
+        // stay in view while the user carries on working elsewhere.
         collapseObserver = NotificationCenter.default.addObserver(
-            forName: Notification.Name("CollapseDynamicIsland"),
+            forName: .collapseDynamicIsland,
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            MainActor.assumeIsolated { self?.collapseIsland() }
+            MainActor.assumeIsolated {
+                guard let self = self,
+                      self.islandState == .expanded || self.islandState == .about else { return }
+                self.collapseIsland()
+            }
         }
 
         setupSystemObservers()
@@ -406,7 +431,21 @@ class TimerViewModel: ObservableObject {
             }
         }
 
+        toastObserver = ToastManager.shared.$currentToast
+            .map { $0 != nil }
+            .removeDuplicates()
+            .sink { [weak self] visible in
+                MainActor.assumeIsolated {
+                    self?.isToastVisible = visible
+                    self?.syncIslandVisibility()
+                }
+            }
+
         verifyPermissions()
+
+        #if DEBUG
+        debugObserver = installDebugCommands()
+        #endif
     }
 
     deinit {
@@ -442,6 +481,16 @@ class TimerViewModel: ObservableObject {
 
         // Reflect the real login-item state rather than assuming false.
         startAtLogin = SMAppService.mainApp.status == .enabled
+
+        // `didSet` is suppressed while loading, so a saved "show Dock icon"
+        // was persisted but never applied on the next launch. Deferred until
+        // NSApp has finished launching.
+        if showInDock {
+            DispatchQueue.main.async { [weak self] in
+                guard let self = self else { return }
+                self.toggleDockIcon(self.showInDock)
+            }
+        }
     }
 
     // MARK: - System Observers
@@ -496,8 +545,15 @@ class TimerViewModel: ObservableObject {
 
     // MARK: - Formatting
 
+    /// Whole seconds left, rounded up — the way every countdown reads: "0:01"
+    /// stays on screen until the action actually fires. Display, urgency and
+    /// alerts all use this one value so they can never disagree.
+    var secondsRemaining: Int {
+        max(0, Int(timeRemaining.rounded(.up)))
+    }
+
     var timeString: String {
-        let total = max(0, Int(timeRemaining.rounded()))
+        let total = secondsRemaining
         let hours = total / 3600
         let minutes = (total % 3600) / 60
         let seconds = total % 60
@@ -517,14 +573,13 @@ class TimerViewModel: ObservableObject {
 
         deadline = Date().addingTimeInterval(minutes * 60)
         timeRemaining = minutes * 60
+        totalDuration = minutes * 60
         scheduledAction = action
         currentPowerAction = action
         isActive = true
         lastAudioTriggerSecond = -1
-        lastPeekTime = Date()
 
         updateUrgencyLevel()
-        animationPhase = .rolling
 
         ToastManager.shared.success("\(action.displayName) scheduled in \(Self.describe(minutes: minutes))")
 
@@ -533,7 +588,8 @@ class TimerViewModel: ObservableObject {
         }
 
         startTicking()
-        showWindow()
+        // Show the new countdown briefly, then tuck it away until the next peek.
+        triggerPeek()
     }
 
     private static func describe(minutes: Double) -> String {
@@ -549,11 +605,23 @@ class TimerViewModel: ObservableObject {
         return parts.isEmpty ? "0s" : parts.joined(separator: " ")
     }
 
+    /// Ticks once a second, phase-locked to just after each whole-second
+    /// boundary of the deadline.
+    ///
+    /// The previous free-running 0.5s timer landed *exactly* on the
+    /// boundaries, so floating-point noise decided whether each digit changed
+    /// on time or half a second late, and the roller limped.
     private func startTicking() {
         timer?.invalidate()
-        let timer = Timer(timeInterval: 0.5, repeats: true) { [weak self] _ in
+        guard let deadline = deadline else { return }
+
+        let phase = max(0, deadline.timeIntervalSinceNow).truncatingRemainder(dividingBy: 1)
+        let firstFire = Date().addingTimeInterval(phase + 0.02)
+
+        let timer = Timer(fire: firstFire, interval: 1, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.tick() }
         }
+        timer.tolerance = 0.01
         // .common so the countdown keeps running while a menu is open.
         RunLoop.main.add(timer, forMode: .common)
         self.timer = timer
@@ -571,11 +639,13 @@ class TimerViewModel: ObservableObject {
         let wasActive = isActive
         isActive = false
         timeRemaining = 0
+        totalDuration = 0
         scheduledAction = nil
         lastAudioTriggerSecond = -1
+        peekWorkItem?.cancel()
+        isPeeking = false
 
         urgencyLevel = .normal
-        animationPhase = .idle
 
         stopAllSounds()
 
@@ -585,7 +655,7 @@ class TimerViewModel: ObservableObject {
 
         if wasActive && !silently {
             ToastManager.shared.info("Timer cancelled")
-            hideWindow()
+            syncIslandVisibility()
         }
     }
 
@@ -600,10 +670,10 @@ class TimerViewModel: ObservableObject {
 
         let remaining = max(0, deadline.timeIntervalSinceNow)
 
-        // Only publish on whole-second boundaries so the roller animates once
-        // per second instead of stuttering twice.
+        // Only publish on whole-second boundaries so the roller animates
+        // exactly once per second.
         let newWhole = Int(remaining.rounded(.up))
-        let oldWhole = Int(timeRemaining.rounded(.up))
+        let oldWhole = secondsRemaining
 
         if remaining <= 0 {
             timeRemaining = 0
@@ -614,7 +684,6 @@ class TimerViewModel: ObservableObject {
         guard newWhole != oldWhole else { return }
 
         timeRemaining = remaining
-        animationPhase = .rolling
 
         updateUrgencyLevel()
         handleAudioAlerts(secondsRemaining: newWhole)
@@ -624,7 +693,7 @@ class TimerViewModel: ObservableObject {
     private func fireScheduledAction() {
         let actionToExecute = scheduledAction
         cancelTimer(silently: true)
-        hideWindow()
+        defer { syncIslandVisibility() }
 
         guard let action = actionToExecute else { return }
 
@@ -682,7 +751,14 @@ class TimerViewModel: ObservableObject {
     // MARK: - Battery Intelligence
 
     private func handleBatteryChange(level: Double, isPluggedIn: Bool) {
-        guard level <= 20, !isPluggedIn, !isActive, !isShowingSuggestion else { return }
+        // Re-arm once the Mac is charging again, so the next discharge gets
+        // its own (single) suggestion.
+        if isPluggedIn || level > 20 {
+            hasSuggestedForThisDischarge = false
+            return
+        }
+        guard !isActive, !isShowingSuggestion, !hasSuggestedForThisDischarge else { return }
+        hasSuggestedForThisDischarge = true
 
         suggestionMessage = "Low Battery: Shutdown soon?"
         isShowingSuggestion = true
@@ -711,20 +787,30 @@ class TimerViewModel: ObservableObject {
     func snoozeTimer() {
         guard isActive, let current = deadline else { return }
 
-        deadline = current.addingTimeInterval(300)
-        timeRemaining = max(0, self.deadline!.timeIntervalSinceNow)
+        let extended = current.addingTimeInterval(300)
+        deadline = extended
+        totalDuration += 300
+        timeRemaining = max(0, extended.timeIntervalSinceNow)
         lastAudioTriggerSecond = -1
-        animationPhase = .rolling
         updateUrgencyLevel()
 
         ToastManager.shared.success("Timer snoozed: +5 minutes")
     }
 
-    /// Toggles between shutdown and sleep (Long Press)
+    /// Switches the running countdown between shutdown and sleep (Long Press).
+    ///
+    /// Changes `scheduledAction` — the one that actually fires. Toggling only
+    /// `currentPowerAction` updated nothing on screen and left the original
+    /// action armed.
     func togglePrimaryAction() {
-        withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-            currentPowerAction = (currentPowerAction == .shutdown) ? .sleep : .shutdown
+        guard isActive, let scheduled = scheduledAction else { return }
+        let next: PowerAction = scheduled == .sleep ? .shutdown : .sleep
+
+        withAnimation(SpringAnimator.buttonSelection()) {
+            scheduledAction = next
+            currentPowerAction = next
         }
+        ToastManager.shared.info("Switched to \(next.displayName)")
     }
 
     // MARK: - Intelligent Visibility Logic
@@ -748,55 +834,72 @@ class TimerViewModel: ObservableObject {
         }
     }
 
+    /// Shows the pill for a few seconds. A newer peek replaces an older one's
+    /// timer, so overlapping peeks can no longer hide the island early.
     private func triggerPeek() {
+        peekWorkItem?.cancel()
         isPeeking = true
         lastPeekTime = Date()
+        syncIslandVisibility()
 
-        showWindow()
-
-        DispatchQueue.main.asyncAfter(deadline: .now() + 5.0) { [weak self] in
+        let work = DispatchWorkItem { [weak self] in
             guard let self = self else { return }
-            if self.isActive && self.islandState == .collapsed {
-                self.hideWindow()
-            }
             self.isPeeking = false
+            self.syncIslandVisibility()
+        }
+        peekWorkItem = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 5.0, execute: work)
+    }
+
+    /// The single rule for whether the island is on screen.
+    ///
+    /// Show/hide used to be decided ad hoc at five call sites, which is how the
+    /// pill ended up out for minutes after a timer started, and why toasts
+    /// raised from the menu (e.g. Verify Permissions) rendered in a hidden
+    /// window where nobody could see them.
+    private var shouldShowIsland: Bool {
+        islandState != .collapsed
+            || isPeeking
+            || isToastVisible
+            || (isActive && urgencyLevel != .normal)
+    }
+
+    private func syncIslandVisibility() {
+        if shouldShowIsland {
+            showWindow()
+        } else {
+            hideWindow()
         }
     }
 
     // MARK: - Dynamic Island State Management
 
     func expandIsland() {
-        guard islandState == .collapsed || islandState == .collapsing else { return }
+        guard islandState == .collapsed else { return }
 
         updateActiveScreen()
-
-        animationPhase = .morphing
         showWindow(activating: true)
 
         withAnimation(AnimationFallbackManager.shared.getAnimation(for: .morphing)) {
             islandState = .expanded
-        }
-
-        DispatchQueue.main.asyncAfter(deadline: .now() + SpringAnimator.morphDuration) { [weak self] in
-            guard let self = self, self.animationPhase == .morphing else { return }
-            self.animationPhase = .idle
         }
     }
 
     func collapseIsland() {
         guard islandState == .expanded || islandState == .critical || islandState == .about else { return }
 
-        animationPhase = .morphing
-
         withAnimation(AnimationFallbackManager.shared.getAnimation(for: .morphing)) {
             islandState = .collapsed
         }
 
-        DispatchQueue.main.asyncAfter(deadline: .now() + SpringAnimator.morphDuration) { [weak self] in
-            guard let self = self else { return }
-            if self.animationPhase == .morphing { self.animationPhase = .idle }
-            if !self.isActive && self.islandState == .collapsed {
-                self.hideWindow()
+        // A running countdown lingers as a pill for a moment before tucking
+        // away; otherwise the island leaves once the morph has settled.
+        if isActive {
+            triggerPeek()
+        } else {
+            DispatchQueue.main.asyncAfter(deadline: .now() + SpringAnimator.morphDuration) { [weak self] in
+                guard let self = self, self.islandState == .collapsed else { return }
+                self.syncIslandVisibility()
             }
         }
     }
@@ -820,9 +923,8 @@ class TimerViewModel: ObservableObject {
     func openCustomTimerInput(for action: PowerAction) {
         currentPowerAction = action
         showingCustomInput = true
-        selectedTimeOption = .custom
 
-        if islandState == .collapsed || islandState == .collapsing {
+        if islandState == .collapsed {
             expandIsland()
         } else {
             showWindow(activating: true)
@@ -840,9 +942,9 @@ class TimerViewModel: ObservableObject {
     /// on the same window at exactly T-60s and T-10s.
     func updateUrgencyLevel() {
         let newUrgencyLevel: UrgencyLevel
-        if timeRemaining <= 10 {
+        if secondsRemaining <= 10 {
             newUrgencyLevel = .critical
-        } else if timeRemaining <= 60 {
+        } else if secondsRemaining <= 60 {
             newUrgencyLevel = .warning
         } else {
             newUrgencyLevel = .normal
@@ -852,6 +954,13 @@ class TimerViewModel: ObservableObject {
 
         withAnimation(AnimationFallbackManager.shared.getAnimation(for: .glowing)) {
             urgencyLevel = newUrgencyLevel
+        }
+
+        // Snoozed back out of the last minute: drop the oversized alert layout.
+        if newUrgencyLevel == .normal && islandState == .critical {
+            withAnimation(AnimationFallbackManager.shared.getAnimation(for: .morphing)) {
+                islandState = .expanded
+            }
         }
 
         guard newUrgencyLevel == .warning || newUrgencyLevel == .critical else { return }
@@ -872,7 +981,6 @@ class TimerViewModel: ObservableObject {
 
         withAnimation(AnimationFallbackManager.shared.getAnimation(for: .morphing)) {
             islandState = .critical
-            animationPhase = .glowing
         }
 
         // Nudge the island sideways to draw the eye. Purely a SwiftUI offset —
@@ -894,13 +1002,6 @@ class TimerViewModel: ObservableObject {
     func useSystemTheme() {
         ThemeManager.shared.enableSystemThemeFollowing()
         followsSystemTheme = true
-    }
-
-    func selectTimeOption(_ option: TimeOption) {
-        withAnimation(AnimationFallbackManager.shared.getAnimation(for: .buttonSelection)) {
-            selectedTimeOption = option
-            showingCustomInput = (option == .custom)
-        }
     }
 
     // MARK: - Background & System Management
@@ -974,29 +1075,60 @@ class TimerViewModel: ObservableObject {
 
     // MARK: - Updates & Diagnostics
 
+    /// Asks GitHub for the latest release. This used to wait two seconds and
+    /// then report "latest version (1.0.0)" unconditionally.
     func handleCheckForUpdates() {
+        guard !isCheckingForUpdates else { return }
+
         isCheckingForUpdates = true
         updateStatusMessage = "Checking for updates…"
 
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self] in
-            self?.isCheckingForUpdates = false
-            self?.updateStatusMessage = "You are on the latest version (1.0.0)"
+        Task {
+            let outcome = await UpdateChecker.check()
+            isCheckingForUpdates = false
+
+            withAnimation(SpringAnimator.contentSwap()) {
+                switch outcome {
+                case .upToDate(let current):
+                    availableUpdateURL = nil
+                    updateStatusMessage = "NotchDown \(current) is the latest version"
+                case .available(let release):
+                    availableUpdateURL = release.pageURL
+                    updateStatusMessage = "Version \(release.version) is available"
+                case .failed(let reason):
+                    updateStatusMessage = reason
+                }
+            }
         }
     }
 
     func runDiagnostics() {
-        DiagnosticsManager.shared.runDiagnostics { [weak self] in
-            guard self != nil else { return }
+        DiagnosticsManager.shared.runDiagnostics {
             let report = DiagnosticsManager.shared.generateReport()
-            print(report)
+            let failures = DiagnosticsManager.shared.diagnosticResults.filter { $0.status == .failed }.count
 
+            // The report used to go to stdout only, where no user would ever see it.
             NSApp.activate(ignoringOtherApps: true)
             let alert = NSAlert()
-            alert.messageText = "Diagnostics Complete"
-            alert.informativeText = "Full report printed to the console. Export it from the About page for sharing."
-            alert.alertStyle = .informational
+            alert.messageText = failures == 0 ? "All Checks Passed" : "\(failures) Check\(failures == 1 ? "" : "s") Failed"
+            alert.informativeText = report
+            alert.alertStyle = failures == 0 ? .informational : .warning
             alert.addButton(withTitle: "OK")
-            alert.runModal()
+            alert.addButton(withTitle: "Copy Report")
+            alert.addButton(withTitle: "Save…")
+
+            switch alert.runModal() {
+            case .alertSecondButtonReturn:
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(report, forType: .string)
+                ToastManager.shared.success("Diagnostics copied to clipboard")
+            case .alertThirdButtonReturn:
+                DiagnosticsManager.shared.exportReport { url in
+                    if url != nil { ToastManager.shared.success("Diagnostics saved") }
+                }
+            default:
+                break
+            }
         }
     }
 
@@ -1039,14 +1171,6 @@ class TimerViewModel: ObservableObject {
             }
         } else {
             alert.runModal()
-        }
-    }
-
-    func testPowerAction(_ action: PowerAction) {
-        PowerManager.shared.testAction(action) { [weak self] success in
-            guard let self = self else { return }
-            self.hasPermissions = success
-            self.showPermissionWarning = !success
         }
     }
 }

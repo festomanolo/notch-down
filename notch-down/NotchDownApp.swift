@@ -311,6 +311,9 @@ class TimerViewModel: ObservableObject {
     @Published var isShowingSuggestion = false
     @Published var suggestionMessage = ""
     @Published var currentPowerAction: PowerAction = .shutdown
+    /// Set once the low-battery suggestion has been offered, so dismissing it
+    /// is final — it used to reappear on every battery update below 20%.
+    private var hasSuggestedForThisDischarge = false
 
     // About Page State
     @Published var isCheckingForUpdates = false
@@ -680,7 +683,14 @@ class TimerViewModel: ObservableObject {
     // MARK: - Battery Intelligence
 
     private func handleBatteryChange(level: Double, isPluggedIn: Bool) {
-        guard level <= 20, !isPluggedIn, !isActive, !isShowingSuggestion else { return }
+        // Re-arm once the Mac is charging again, so the next discharge gets
+        // its own (single) suggestion.
+        if isPluggedIn || level > 20 {
+            hasSuggestedForThisDischarge = false
+            return
+        }
+        guard !isActive, !isShowingSuggestion, !hasSuggestedForThisDischarge else { return }
+        hasSuggestedForThisDischarge = true
 
         suggestionMessage = "Low Battery: Shutdown soon?"
         isShowingSuggestion = true

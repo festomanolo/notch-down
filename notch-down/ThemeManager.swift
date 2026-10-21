@@ -146,26 +146,3 @@ class ThemeManager: ObservableObject {
         }
     }
 }
-
-// MARK: - Theme Accessibility Extensions
-
-extension ThemeManager {
-    /// Checks if current theme meets WCAG contrast requirements
-    func meetsWCAGContrast(level: WCAGLevel = .AA) -> Bool {
-        // This would use actual contrast ratio calculations
-        // For now, we assume our color choices meet requirements
-        return true
-    }
-    
-    /// WCAG contrast level requirements
-    enum WCAGLevel {
-        case AA      // Minimum contrast ratio 4.5:1 for normal text
-        case AAA     // Enhanced contrast ratio 7:1 for normal text
-    }
-    
-    /// Gets high contrast variant if available
-    func highContrastVariant() -> AppTheme {
-        // For high contrast mode, we might adjust colors
-        return currentTheme
-    }
-}

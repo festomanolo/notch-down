@@ -295,6 +295,7 @@ class NotchPanel: NSPanel {
         self.animationBehavior = .none
 
         // Materials, menus and SwiftUI's colour scheme follow the *window's*
+        // appearance. Left to the system, a light island on a dark Mac got dark
     }
 
     override var canBecomeKey: Bool { true }

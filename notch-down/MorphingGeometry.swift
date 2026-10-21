@@ -59,6 +59,7 @@ enum MorphingGeometry {
             if content.isShowingSuggestion {
                 size.height = 178
             } else if content.isTimerActive {
+                size.height = 234
                 size.height = state == .critical ? 246 : 234
             } else if content.isShowingCustomInput {
                 size.height = 178
